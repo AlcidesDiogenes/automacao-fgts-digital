@@ -1,0 +1,48 @@
+# Ambientes virtuais
+venv/
+.venv/
+env/
+
+# Arquivos de ambiente e segredos (Senhas e credenciais)
+.env
+**/.env
+*.env
+!.env.example
+
+# Certificados Digitais e Chaves Criptográficas (Segurança Máxima)
+*.pfx
+*.p12
+*.pem
+*.key
+*.crt
+*.cer
+certificados/
+
+# Dados de clientes, planilhas e relatórios de folha (LGPD / Sigilo)
+data/*.pdf
+data/*.xlsx
+data/*.xls
+data/*.csv
+data/*.db
+data/*_profile/
+data/browser_profile/
+data/chrome_profile/
+data/test_profile/
+data/test_cdp_profile/
+data/test_native_profile/
+
+# Arquivos gerados e logs de execução
+data/output/*
+!data/output/.gitkeep
+data/logs/*
+!data/logs/.gitkeep
+
+# Caches e temporários
+__pycache__/
+**/*/__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+*.log
+.DS_Store
+Thumbs.db
