@@ -243,15 +243,6 @@ class ExcelManager:
         wb.save(arquivo_path)
         logger.info(f"Relatório de execução gerado com sucesso: {arquivo_path}")
 
-        # Se houver itens com divergência, gera também o Relatório Exclusivo de Divergências
-        itens_divergentes = [
-            it for it in resultados
-            if "diverg" in str(it.get("status", "")).lower()
-            or (float(it.get("fgts_esperado", 0.0) or 0.0) > 0 and abs(float(it.get("valor_guia", 0.0) or 0.0) - float(it.get("fgts_esperado", 0.0) or 0.0)) > 0.02)
-        ]
-        if itens_divergentes:
-            ExcelManager.gerar_relatorio_divergencias(itens_divergentes, destino_dir, competencia)
-
         return arquivo_path
 
     @staticmethod
