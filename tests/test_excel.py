@@ -49,7 +49,7 @@ def test_gerar_relatorio_execucao(tmp_path):
     assert rel_path.suffix == ".xlsx"
 
 
-def test_gerar_relatorio_divergencias(tmp_path):
+def test_gerar_relatorio_apenas_um_arquivo(tmp_path):
     resultados = [
         {
             "cnpj": "12345678000190",
@@ -75,11 +75,16 @@ def test_gerar_relatorio_divergencias(tmp_path):
 
     rel_path = ExcelManager.gerar_relatorio_execucao(resultados, tmp_path, "09/2026")
     assert rel_path.exists()
+    assert rel_path.name.startswith("Relatorio_FGTS_Digital_")
 
-    # Verifica se gerou o arquivo de divergências
+    # Garante que NÃO gera relatório duplicado de divergências (apenas o Relatorio_FGTS_Digital)
     arquivos_div = list(tmp_path.glob("DIVERGENCIAS_FGTS_*.xlsx"))
-    assert len(arquivos_div) == 1
-    assert arquivos_div[0].exists()
+    assert len(arquivos_div) == 0
+
+    # Verifica que o diretório contém exatamente 1 arquivo gerado
+    todos_xlsx = list(tmp_path.glob("*.xlsx"))
+    assert len(todos_xlsx) == 1
+    assert todos_xlsx[0] == rel_path
 
 
 def test_gerar_relatorio_conferencia(tmp_path):
@@ -112,4 +117,22 @@ def test_gerar_relatorio_conferencia(tmp_path):
 
     rel_path = ExcelManager.gerar_relatorio_execucao(resultados, tmp_path, "09/2026")
     assert rel_path.exists()
-    assert list(tmp_path.glob("DIVERGENCIAS_FGTS_*.xlsx"))
+    assert rel_path.name.startswith("Relatorio_FGTS_Digital_")
+    assert not list(tmp_path.glob("DIVERGENCIAS_FGTS_*.xlsx"))
+
+
+def test_gerar_relatorio_divergencias_avulso(tmp_path):
+    itens = [
+        {
+            "cnpj": "98765432000110",
+            "razao_social": "Empresa Beta S/A",
+            "competencia": "09/2026",
+            "status": "Divergência de Valores",
+            "fgts_esperado": 3500.00,
+            "valor_guia": 3800.00,
+            "detalhes": "Divergência"
+        }
+    ]
+    div_path = ExcelManager.gerar_relatorio_divergencias(itens, tmp_path, "09/2026")
+    assert div_path.exists()
+    assert div_path.name.startswith("DIVERGENCIAS_FGTS_")
