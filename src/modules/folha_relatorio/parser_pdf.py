@@ -25,13 +25,36 @@ class RelatorioFolhaParser:
     """Parser para extração estruturada de encargos em relatórios PDF de folha."""
 
     @staticmethod
-    def parse_pdf(pdf_path: Path) -> List[Dict[str, Any]]:
+    def carregar_regras_parametros() -> Dict[str, bool]:
+        """Carrega regras de leitura ativas de config/parametros.json com fallback para padrões."""
+        padrao = {
+            "fgts_mensal": True,
+            "emp_cred_trab": True,
+            "fgts_compl": True,
+            "emp_cred_tr_resc": False,
+            "simples_dom": False
+        }
+        cfg_path = Path("config/parametros.json")
+        if cfg_path.exists():
+            try:
+                import json
+                with open(cfg_path, "r", encoding="utf-8") as f:
+                    dados = json.load(f)
+                    return {**padrao, **dados.get("regras_leitura_pdf", {})}
+            except Exception:
+                pass
+        return padrao
+
+    @staticmethod
+    def parse_pdf(pdf_path: Path, regras_encargos: Optional[Dict[str, bool]] = None) -> List[Dict[str, Any]]:
         """
-        Lê todas as páginas do PDF e consolida os encargos por CNPJ/CPF.
+        Lê todas as páginas do PDF e consolida os encargos por CNPJ/CPF conforme os parâmetros ativos.
         """
         pdf_path = Path(pdf_path)
         if not pdf_path.exists():
             raise FileNotFoundError(f"Arquivo não encontrado: {pdf_path}")
+
+        regras = regras_encargos or RelatorioFolhaParser.carregar_regras_parametros()
 
         reader = PdfReader(str(pdf_path))
         empresas: Dict[str, Dict[str, Any]] = {}
@@ -78,12 +101,9 @@ class RelatorioFolhaParser:
                 razao = f"Documento {doc}"
 
             # 3. Identifica Competência do Encargo a partir da coluna 'Competência' das linhas de encargos
-            # No relatório Domínio, o cabeçalho traz 'Competência: 10/2026 a 10/2026' referente ao mês de vencimento,
-            # mas a coluna tabular 'Competência' traz a competência contábil real do fato gerador (ex: 09/2026).
             competencia = "09/2026"
             for l in lines:
                 if any(k in l for k in ["FGTS", "Emp. Cr", "Simples dom"]):
-                    # Captura MM/AAAA que não seja parte de uma data completa DD/MM/AAAA
                     comps = re.findall(r"(?<!\d/)(\d{2}/\d{4})", l)
                     if comps:
                         competencia = comps[0]
@@ -99,6 +119,10 @@ class RelatorioFolhaParser:
                     "razao_social": razao,
                     "competencia": competencia,
                     "vencimento": "20/10/2026",
+                    "fgts_mensal_regular": 0.0,
+                    "fgts_compl": 0.0,
+                    "consignado_trabalhador": 0.0,
+                    "consignado_resc": 0.0,
                     "fgts_mensal": 0.0,
                     "fgts_rescisorio": 0.0,
                     "consignado": 0.0,
@@ -139,28 +163,56 @@ class RelatorioFolhaParser:
                         curr_encargo = "FGTS"
                     elif l.startswith("FGTS Compl"):
                         curr_encargo = "FGTS_COMPL"
+                    elif l.startswith("Emp. Cr") and ("Resc" in l or "Tr. Resc" in l):
+                        curr_encargo = "EMP_CRED_TR_RESC"
                     elif l.startswith("Emp. Cr"):
-                        curr_encargo = "CONSIGNADO"
+                        curr_encargo = "EMP_CRED_TRAB"
                     elif l.startswith("Simples dom"):
                         curr_encargo = "DOMESTICO"
                     elif l.startswith("Total:") and "Geral" not in l:
                         vals = currency_regex.findall(l)
                         if vals:
                             tot_float = float(vals[0].replace(".", "").replace(",", "."))
-                            if curr_encargo in ("FGTS", "FGTS_COMPL"):
-                                emp["fgts_mensal"] += tot_float
-                            elif curr_encargo == "CONSIGNADO":
-                                emp["consignado"] += tot_float
+                            if curr_encargo == "FGTS":
+                                emp["fgts_mensal_regular"] += tot_float
+                            elif curr_encargo == "FGTS_COMPL":
+                                emp["fgts_compl"] += tot_float
+                            elif curr_encargo == "EMP_CRED_TRAB":
+                                emp["consignado_trabalhador"] += tot_float
+                            elif curr_encargo == "EMP_CRED_TR_RESC":
+                                emp["consignado_resc"] += tot_float
                             elif curr_encargo == "DOMESTICO":
                                 emp["outros_encargos"] += tot_float
                         curr_encargo = ""
 
-            emp["fgts_mensal"] = round(emp["fgts_mensal"], 2)
+            # Consolidação dos valores parciais
+            emp["fgts_mensal_regular"] = round(emp["fgts_mensal_regular"], 2)
+            emp["fgts_compl"] = round(emp["fgts_compl"], 2)
+            emp["consignado_trabalhador"] = round(emp["consignado_trabalhador"], 2)
+            emp["consignado_resc"] = round(emp["consignado_resc"], 2)
+
+            emp["fgts_mensal"] = round(emp["fgts_mensal_regular"] + emp["fgts_compl"], 2)
+            emp["consignado"] = round(emp["consignado_trabalhador"], 2)
+            if regras.get("emp_cred_tr_resc", False):
+                emp["consignado"] = round(emp["consignado"] + emp["consignado_resc"], 2)
+
             emp["fgts_rescisorio"] = round(emp["fgts_rescisorio"], 2)
-            emp["consignado"] = round(emp["consignado"], 2)
             emp["outros_encargos"] = round(emp["outros_encargos"], 2)
-            # No FGTS Digital, o Empréstimo Consignado é recolhido na mesma guia única junto com o FGTS mensal
-            emp["total_fgts"] = round(emp["fgts_mensal"] + emp["consignado"], 2)
+
+            # Total da Guia do FGTS calculado de acordo com os parâmetros definidos
+            tot_fgts = 0.0
+            if regras.get("fgts_mensal", True):
+                tot_fgts += emp["fgts_mensal_regular"]
+            if regras.get("fgts_compl", True):
+                tot_fgts += emp["fgts_compl"]
+            if regras.get("emp_cred_trab", True):
+                tot_fgts += emp["consignado_trabalhador"]
+            if regras.get("emp_cred_tr_resc", False):
+                tot_fgts += emp["consignado_resc"]
+            if regras.get("simples_dom", False):
+                tot_fgts += emp["outros_encargos"]
+
+            emp["total_fgts"] = round(tot_fgts, 2)
             emp["total_geral"] = round(emp["total_fgts"] + emp["fgts_rescisorio"] + emp["outros_encargos"], 2)
 
         resultado = list(empresas.values())

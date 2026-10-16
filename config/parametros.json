@@ -1,0 +1,17 @@
+{
+  "regras_leitura_pdf": {
+    "fgts_mensal": true,
+    "emp_cred_trab": true,
+    "fgts_compl": true,
+    "emp_cred_tr_resc": false,
+    "simples_dom": false
+  },
+  "nomenclatura": {
+    "guia": "FGTS - Competencia",
+    "relatorio_fgts": "RE FGTS - Competencia",
+    "relatorio_consignado": "Consignado FGTS - Competencia"
+  },
+  "pastas": {
+    "output_dir": "data/output"
+  }
+}

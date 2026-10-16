@@ -125,3 +125,76 @@ def formatar_nome_documento(template: str, contexto: dict) -> str:
 
     return sanitizar_nome_arquivo(resultado)
 
+
+def extrair_valor_fgts_de_texto(texto: str, fgts_esperado: float = 0.0) -> float:
+    """
+    Extrai o valor monetário da Guia Rápida MENSAL a partir do texto renderizado na tela.
+    Suporta múltiplos blocos Mensais (ex: folha geral e folha complementar/avulsa),
+    selecionando o bloco que corresponde ao valor esperado (fgts_esperado) ou o de maior valor.
+    Prioriza a seção/bloco exclusivo da guia Mensal para evitar falsas divergências
+    quando o cliente possui guias rescisórias não pagas (ou outros débitos)
+    que são somadas no 'Total Devedor' no topo da página.
+    """
+    if not texto:
+        return 0.0
+
+    # 1. Localiza todos os inícios de blocos 'Mensal - Vencimento' na tela
+    posicoes_mensal = [m.start() for m in re.finditer(r"Mensal\s*-\s*Vencimento", texto, re.IGNORECASE)]
+
+    if posicoes_mensal:
+        blocos_valores = []
+        for i, pos_inicio in enumerate(posicoes_mensal):
+            # O bloco vai até o próximo cabeçalho Mensal, ou até o fim
+            pos_fim = posicoes_mensal[i + 1] if i + 1 < len(posicoes_mensal) else len(texto)
+            bloco = texto[pos_inicio:pos_fim]
+
+            # Corta se encontrar Rescisória ou Total Devedor dentro do trecho
+            m_corte = re.search(r"\n\s*(?:Rescisória|Total Devedor)\s*-", bloco[25:], re.IGNORECASE)
+            if m_corte:
+                bloco = bloco[:m_corte.start() + 25]
+
+            val = 0.0
+            # 1a. Procura por 'Total Guia' dentro do bloco (ex: 'Total Guia 31.240,69')
+            m_total_guia = re.search(r"Total\s*Guia[^\d]*(\d{1,3}(?:\.\d{3})*,\d{2})", bloco, re.IGNORECASE)
+            if m_total_guia:
+                val = converter_valor_br(m_total_guia.group(1))
+
+            # 1b. Fallback: procura pela última ocorrência de 'Total' no bloco
+            if val == 0.0:
+                matches_totais = re.findall(r"Total[^\d]*(\d{1,3}(?:\.\d{3})*,\d{2})", bloco, re.IGNORECASE)
+                if matches_totais:
+                    val = converter_valor_br(matches_totais[-1])
+
+            if val > 0:
+                blocos_valores.append(val)
+
+        if blocos_valores:
+            if fgts_esperado > 0:
+                # Escolhe o valor que tem menor diferença com o valor esperado
+                blocos_valores.sort(key=lambda v: abs(v - fgts_esperado))
+                return blocos_valores[0]
+            else:
+                # Se não houver valor esperado, pega o de maior valor (folha principal)
+                return max(blocos_valores)
+
+    # 2. Se não encontrou cabeçalho Mensal explícito, busca 'Total Guia' na página geral
+    m_guia = re.search(r"Total\s*Guia[^\d]*(\d{1,3}(?:\.\d{3})*,\d{2})", texto, re.IGNORECASE)
+    if m_guia:
+        val = converter_valor_br(m_guia.group(1))
+        if val > 0:
+            return val
+
+    # 3. Fallback: 'Total Devedor' na página geral (apenas se 'Total Guia' não existir)
+    m_devedor = re.search(r"Total\s*Devedor[^\d]*(\d{1,3}(?:\.\d{3})*,\d{2})", texto, re.IGNORECASE)
+    if m_devedor:
+        val = converter_valor_br(m_devedor.group(1))
+        if val > 0:
+            return val
+
+    # 4. Fallback genérico: busca qualquer padrão monetário associado a 'Total'
+    matches = re.findall(r"Total[^\d]*(\d{1,3}(?:\.\d{3})*,\d{2})", texto, re.IGNORECASE)
+    if matches:
+        return converter_valor_br(matches[-1])
+
+    return 0.0
+

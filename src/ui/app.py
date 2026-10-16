@@ -6,6 +6,7 @@ padronizados e tabelas de alta resolução.
 """
 
 import os
+import json
 import threading
 from pathlib import Path
 from datetime import datetime
@@ -51,6 +52,16 @@ class FGTSDigitalApp(ctk.CTk):
         self.nome_guia_var = tk.StringVar(value="FGTS - Competencia")
         self.nome_rel_fgts_var = tk.StringVar(value="RE FGTS - Competencia")
         self.nome_rel_cons_var = tk.StringVar(value="Consignado FGTS - Competencia")
+
+        # Parâmetros de Leitura de Relatório (PDF)
+        self.param_fgts_mensal_var = tk.BooleanVar(value=True)
+        self.param_emp_cred_trab_var = tk.BooleanVar(value=True)
+        self.param_fgts_compl_var = tk.BooleanVar(value=True)
+        self.param_emp_cred_tr_resc_var = tk.BooleanVar(value=False)
+        self.param_simples_dom_var = tk.BooleanVar(value=False)
+
+        # Carrega parâmetros persistidos em config/parametros.json
+        self._carregar_parametros()
 
         # Competência
         self.comp_tipo_var = tk.StringVar(value="anterior")
@@ -143,6 +154,7 @@ class FGTSDigitalApp(ctk.CTk):
             ("painel", "⚙  Painel de Controle"),
             ("folha", "📑  Importar Relatório (PDF)"),
             ("empresas", "📋  Fila de Empresas"),
+            ("parametros", "🛠  Parâmetros"),
             ("logs", "📜  Logs & Auditoria")
         ]
 
@@ -264,7 +276,6 @@ class FGTSDigitalApp(ctk.CTk):
         self.panel_host.grid_columnconfigure(0, weight=1)
         self.panel_host.grid_rowconfigure(0, weight=1)
 
-        # Instanciação dos painéis
         self.frame_painel = ctk.CTkScrollableFrame(
             self.panel_host,
             fg_color="transparent",
@@ -274,18 +285,27 @@ class FGTSDigitalApp(ctk.CTk):
         )
         self.frame_folha = ctk.CTkFrame(self.panel_host, fg_color="transparent")
         self.frame_empresas = ctk.CTkFrame(self.panel_host, fg_color="transparent")
+        self.frame_parametros = ctk.CTkScrollableFrame(
+            self.panel_host,
+            fg_color="transparent",
+            corner_radius=0,
+            scrollbar_button_color=("#CBD5E1", "#334155"),
+            scrollbar_button_hover_color=("#94A3B8", "#475569")
+        )
         self.frame_logs = ctk.CTkFrame(self.panel_host, fg_color="transparent")
 
         self.frames_paineis = {
             "painel": self.frame_painel,
             "folha": self.frame_folha,
             "empresas": self.frame_empresas,
+            "parametros": self.frame_parametros,
             "logs": self.frame_logs
         }
 
         self._construir_view_painel()
         self._construir_view_folha()
         self._construir_view_empresas()
+        self._construir_view_parametros()
         self._construir_view_logs()
 
         # Ativa o painel inicial
@@ -439,9 +459,10 @@ class FGTSDigitalApp(ctk.CTk):
 
         # Atualiza título do Header Superior
         titulos = {
-            "painel": ("⚙ Painel de Controle e Execução", "Configuração de certificado, competência e acionamento do robô em lote"),
+            "painel": ("⚙ Painel de Controle e Execução", "Competência, pasta de destino e acionamento do robô em lote"),
             "folha": ("📑 Importar Relatório (PDF)", "Extração automática, conferência do consignado e envio das empresas para o robô"),
             "empresas": ("📋 Fila de Empresas Carregadas", "Visualização dos CNPJs validados que serão processados na rodada atual"),
+            "parametros": ("🛠 Parâmetros do Sistema", "Configurações de certificado digital, regras de leitura do PDF e nomenclatura de arquivos"),
             "logs": ("📜 Logs de Execução & Auditoria", "Monitoramento em tempo real do navegador, trocas de procuração e emissões")
         }
         tit, sub = titulos.get(chave, ("", ""))
@@ -458,101 +479,10 @@ class FGTSDigitalApp(ctk.CTk):
     # -------------------------------------------------------------------------
 
     def _construir_view_painel(self):
-        """Constrói o Painel de Controle com cards agrupados e hierarquia visual refinada."""
+        """Constrói o Painel de Controle com parâmetros da rodada e acionamento do robô."""
         self.frame_painel.grid_columnconfigure(0, weight=1)
 
-        # Card 1: Certificado Digital
-        card_cert = ctk.CTkFrame(
-            self.frame_painel,
-            corner_radius=RAIO["md"],
-            fg_color=(CORES["card_light"], CORES["card_dark"]),
-            border_width=1,
-            border_color=(CORES["card_border_light"], CORES["card_border_dark"])
-        )
-        card_cert.grid(row=0, column=0, sticky="ew", pady=(0, 10), padx=(0, 6))
-        card_cert.grid_columnconfigure(1, weight=1)
-
-        lbl_tit_cert = ctk.CTkLabel(
-            card_cert,
-            text="🔒 Certificado Digital",
-            font=ctk.CTkFont(family=FONTE_FAMILIA, size=14, weight="bold")
-        )
-        lbl_tit_cert.grid(row=0, column=0, columnspan=3, padx=15, pady=(12, 6), sticky="w")
-
-        # Seleção de Modo do Certificado
-        modo_box = ctk.CTkFrame(card_cert, fg_color="transparent")
-        modo_box.grid(row=1, column=0, columnspan=3, padx=15, pady=(0, 8), sticky="w")
-
-        rb_cert_win = ctk.CTkRadioButton(
-            modo_box,
-            text="Certificado Instalado no Windows (Automático / Recomendado)",
-            variable=self.cert_modo_var,
-            value="windows",
-            command=self._alternar_modo_certificado
-        )
-        rb_cert_win.pack(side="left", padx=(0, 15))
-
-        rb_cert_pfx = ctk.CTkRadioButton(
-            modo_box,
-            text="Arquivo .PFX Avulso (Opcional)",
-            variable=self.cert_modo_var,
-            value="pfx",
-            command=self._alternar_modo_certificado
-        )
-        rb_cert_pfx.pack(side="left")
-
-        # Frame de aviso quando modo Windows está ativo
-        self.frame_cert_win_aviso = ctk.CTkFrame(card_cert, fg_color=("#ECFDF5", "#064E3B"), corner_radius=6)
-        self.frame_cert_win_aviso.grid(row=2, column=0, columnspan=3, padx=15, pady=(0, 10), sticky="ew")
-
-        lbl_win_desc = ctk.CTkLabel(
-            self.frame_cert_win_aviso,
-            text="✔ O robô utilizará diretamente o certificado digital A1/A3 já instalado no Windows. Nenhuma senha ou arquivo é necessário.",
-            font=ctk.CTkFont(size=12, weight="bold"),
-            text_color=("#065F46", "#34D399")
-        )
-        lbl_win_desc.pack(padx=12, pady=8, anchor="w")
-
-        # Frame com campos de arquivo .PFX (visível apenas no modo pfx)
-        self.frame_cert_pfx_campos = ctk.CTkFrame(card_cert, fg_color="transparent")
-        self.frame_cert_pfx_campos.grid(row=3, column=0, columnspan=3, padx=10, pady=(0, 8), sticky="ew")
-        self.frame_cert_pfx_campos.grid_columnconfigure(1, weight=1)
-
-        lbl_pfx = ctk.CTkLabel(self.frame_cert_pfx_campos, text="Arquivo .pfx:", font=ctk.CTkFont(size=12))
-        lbl_pfx.grid(row=0, column=0, padx=5, pady=4, sticky="w")
-
-        entry_cert = ctk.CTkEntry(self.frame_cert_pfx_campos, textvariable=self.pfx_path_var, placeholder_text="Selecione o arquivo do certificado digital...")
-        entry_cert.grid(row=0, column=1, padx=5, pady=4, sticky="ew")
-
-        btn_buscar_cert = ctk.CTkButton(self.frame_cert_pfx_campos, text="Buscar...", width=80, command=self._selecionar_certificado)
-        btn_buscar_cert.grid(row=0, column=2, padx=5, pady=4)
-
-        lbl_senha = ctk.CTkLabel(self.frame_cert_pfx_campos, text="Senha do Certificado:", font=ctk.CTkFont(size=12))
-        lbl_senha.grid(row=1, column=0, padx=5, pady=4, sticky="w")
-
-        self.entry_senha = ctk.CTkEntry(self.frame_cert_pfx_campos, textvariable=self.pfx_pass_var, show="*")
-        self.entry_senha.grid(row=1, column=1, padx=5, pady=4, sticky="ew")
-
-        btn_validar_cert = ctk.CTkButton(
-            self.frame_cert_pfx_campos,
-            text="Testar Validade",
-            width=110,
-            fg_color="#334155",
-            hover_color="#475569",
-            command=self._validar_certificado
-        )
-        btn_validar_cert.grid(row=1, column=2, padx=5, pady=4)
-
-        self.lbl_cert_status = ctk.CTkLabel(self.frame_cert_pfx_campos, text="", font=ctk.CTkFont(size=11), text_color="#94A3B8")
-        self.lbl_cert_status.grid(row=2, column=0, columnspan=3, padx=5, pady=(2, 6), sticky="w")
-
-        # Inicializa o estado visual do certificado
-        if self.cert_modo_var.get() == "windows":
-            self.frame_cert_pfx_campos.grid_remove()
-        else:
-            self.frame_cert_win_aviso.grid_remove()
-
-        # Card 2: Parâmetros e Competência
+        # Card 1: Parâmetros da Rodada e Competência
         card_params = ctk.CTkFrame(
             self.frame_painel,
             corner_radius=RAIO["md"],
@@ -560,7 +490,7 @@ class FGTSDigitalApp(ctk.CTk):
             border_width=1,
             border_color=(CORES["card_border_light"], CORES["card_border_dark"])
         )
-        card_params.grid(row=1, column=0, sticky="ew", pady=(0, 10), padx=(0, 6))
+        card_params.grid(row=0, column=0, sticky="ew", pady=(0, 10), padx=(0, 6))
         card_params.grid_columnconfigure(1, weight=1)
 
         lbl_tit_params = ctk.CTkLabel(
@@ -631,91 +561,7 @@ class FGTSDigitalApp(ctk.CTk):
         )
         self.sw_apenas_conferir.pack(anchor="w", pady=3)
 
-        # Card 2.5: Personalização de Nomes dos Documentos
-        card_nomes = ctk.CTkFrame(
-            self.frame_painel,
-            corner_radius=RAIO["md"],
-            fg_color=(CORES["card_light"], CORES["card_dark"]),
-            border_width=1,
-            border_color=(CORES["card_border_light"], CORES["card_border_dark"])
-        )
-        card_nomes.grid(row=2, column=0, sticky="ew", pady=(0, 10), padx=(0, 6))
-        card_nomes.grid_columnconfigure(1, weight=1)
-
-        lbl_tit_nomes = ctk.CTkLabel(
-            card_nomes,
-            text="🏷 Nomenclatura dos Documentos Baixados",
-            font=ctk.CTkFont(family=FONTE_FAMILIA, size=14, weight="bold")
-        )
-        lbl_tit_nomes.grid(row=0, column=0, columnspan=3, padx=15, pady=(12, 6), sticky="w")
-
-        # Campo 1: Guia FGTS
-        lbl_n_guia = ctk.CTkLabel(card_nomes, text="Guia FGTS (GFD):", font=ctk.CTkFont(size=12))
-        lbl_n_guia.grid(row=1, column=0, padx=15, pady=4, sticky="w")
-
-        entry_n_guia = ctk.CTkEntry(card_nomes, textvariable=self.nome_guia_var, placeholder_text="FGTS - Competencia")
-        entry_n_guia.grid(row=1, column=1, padx=5, pady=4, sticky="ew")
-
-        # Campo 2: Relatório FGTS
-        lbl_n_rfgts = ctk.CTkLabel(card_nomes, text="Relatório FGTS:", font=ctk.CTkFont(size=12))
-        lbl_n_rfgts.grid(row=2, column=0, padx=15, pady=4, sticky="w")
-
-        entry_n_rfgts = ctk.CTkEntry(card_nomes, textvariable=self.nome_rel_fgts_var, placeholder_text="RE FGTS - Competencia")
-        entry_n_rfgts.grid(row=2, column=1, padx=5, pady=4, sticky="ew")
-
-        # Campo 3: Relatório Consignado
-        lbl_n_rcons = ctk.CTkLabel(card_nomes, text="Relatório Consignado:", font=ctk.CTkFont(size=12))
-        lbl_n_rcons.grid(row=3, column=0, padx=15, pady=4, sticky="w")
-
-        entry_n_rcons = ctk.CTkEntry(card_nomes, textvariable=self.nome_rel_cons_var, placeholder_text="Consignado FGTS - Competencia")
-        entry_n_rcons.grid(row=3, column=1, padx=5, pady=4, sticky="ew")
-
-        # Presets rápidos
-        preset_box = ctk.CTkFrame(card_nomes, fg_color="transparent")
-        preset_box.grid(row=1, column=2, rowspan=3, padx=15, pady=4, sticky="ns")
-
-        btn_pre_padrao = ctk.CTkButton(
-            preset_box,
-            text="Padrão Solicitado",
-            width=130,
-            height=26,
-            fg_color="#334155",
-            hover_color="#475569",
-            command=lambda: self._aplicar_preset_nomes("padrao")
-        )
-        btn_pre_padrao.pack(pady=2)
-
-        btn_pre_emp = ctk.CTkButton(
-            preset_box,
-            text="+ Nome Empresa",
-            width=130,
-            height=26,
-            fg_color="#334155",
-            hover_color="#475569",
-            command=lambda: self._aplicar_preset_nomes("empresa")
-        )
-        btn_pre_emp.pack(pady=2)
-
-        btn_pre_cnpj = ctk.CTkButton(
-            preset_box,
-            text="+ CNPJ",
-            width=130,
-            height=26,
-            fg_color="#334155",
-            hover_color="#475569",
-            command=lambda: self._aplicar_preset_nomes("cnpj")
-        )
-        btn_pre_cnpj.pack(pady=2)
-
-        lbl_dica_nomes = ctk.CTkLabel(
-            card_nomes,
-            text="💡 Variáveis automáticas: Competencia (ex: 09-2026), CNPJ, Empresa",
-            font=ctk.CTkFont(size=11),
-            text_color="#94A3B8"
-        )
-        lbl_dica_nomes.grid(row=4, column=0, columnspan=3, padx=15, pady=(2, 10), sticky="w")
-
-        # Card 3: Ação Central de Disparo e Progresso
+        # Card 2: Ação Central de Disparo e Progresso
         card_action = ctk.CTkFrame(
             self.frame_painel,
             corner_radius=RAIO["md"],
@@ -723,7 +569,7 @@ class FGTSDigitalApp(ctk.CTk):
             border_width=1,
             border_color=(CORES["card_border_light"], CORES["card_border_dark"])
         )
-        card_action.grid(row=3, column=0, sticky="ew", pady=(0, 20), padx=(0, 6))
+        card_action.grid(row=1, column=0, sticky="ew", pady=(0, 20), padx=(0, 6))
         card_action.grid_columnconfigure(0, weight=1)
 
         self.progress_bar = ctk.CTkProgressBar(card_action, height=12, corner_radius=6)
@@ -1100,6 +946,410 @@ class FGTSDigitalApp(ctk.CTk):
         self.txt_logs.grid(row=1, column=0, sticky="nsew")
 
     # -------------------------------------------------------------------------
+    # PAINEL 5: PARÂMETROS DO SISTEMA
+    # -------------------------------------------------------------------------
+
+    def _construir_view_parametros(self):
+        """Constrói o painel de Parâmetros do Sistema (certificado, leitura de PDF e nomenclatura)."""
+        self.frame_parametros.grid_columnconfigure(0, weight=1)
+
+        # Card 1: Certificado Digital
+        card_cert = ctk.CTkFrame(
+            self.frame_parametros,
+            corner_radius=RAIO["md"],
+            fg_color=(CORES["card_light"], CORES["card_dark"]),
+            border_width=1,
+            border_color=(CORES["card_border_light"], CORES["card_border_dark"])
+        )
+        card_cert.grid(row=0, column=0, sticky="ew", pady=(0, 15), padx=(0, 6))
+        card_cert.grid_columnconfigure(1, weight=1)
+
+        lbl_tit_cert = ctk.CTkLabel(
+            card_cert,
+            text="🔒 Certificado Digital",
+            font=ctk.CTkFont(family=FONTE_FAMILIA, size=14, weight="bold")
+        )
+        lbl_tit_cert.grid(row=0, column=0, columnspan=3, padx=15, pady=(12, 6), sticky="w")
+
+        # Seleção de Modo do Certificado
+        modo_box = ctk.CTkFrame(card_cert, fg_color="transparent")
+        modo_box.grid(row=1, column=0, columnspan=3, padx=15, pady=(0, 8), sticky="w")
+
+        rb_cert_win = ctk.CTkRadioButton(
+            modo_box,
+            text="Certificado Instalado no Windows (Automático / Recomendado)",
+            variable=self.cert_modo_var,
+            value="windows",
+            command=self._alternar_modo_certificado
+        )
+        rb_cert_win.pack(side="left", padx=(0, 15))
+
+        rb_cert_pfx = ctk.CTkRadioButton(
+            modo_box,
+            text="Arquivo .PFX Avulso (Opcional)",
+            variable=self.cert_modo_var,
+            value="pfx",
+            command=self._alternar_modo_certificado
+        )
+        rb_cert_pfx.pack(side="left")
+
+        # Frame de aviso quando modo Windows está ativo
+        self.frame_cert_win_aviso = ctk.CTkFrame(card_cert, fg_color=("#ECFDF5", "#064E3B"), corner_radius=6)
+        self.frame_cert_win_aviso.grid(row=2, column=0, columnspan=3, padx=15, pady=(0, 10), sticky="ew")
+
+        lbl_win_desc = ctk.CTkLabel(
+            self.frame_cert_win_aviso,
+            text="✔ O robô utilizará diretamente o certificado digital A1/A3 já instalado no Windows. Nenhuma senha ou arquivo é necessário.",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=("#065F46", "#34D399")
+        )
+        lbl_win_desc.pack(padx=12, pady=8, anchor="w")
+
+        # Frame com campos de arquivo .PFX (visível apenas no modo pfx)
+        self.frame_cert_pfx_campos = ctk.CTkFrame(card_cert, fg_color="transparent")
+        self.frame_cert_pfx_campos.grid(row=3, column=0, columnspan=3, padx=10, pady=(0, 8), sticky="ew")
+        self.frame_cert_pfx_campos.grid_columnconfigure(1, weight=1)
+
+        lbl_pfx = ctk.CTkLabel(self.frame_cert_pfx_campos, text="Arquivo .pfx:", font=ctk.CTkFont(size=12))
+        lbl_pfx.grid(row=0, column=0, padx=5, pady=4, sticky="w")
+
+        entry_cert = ctk.CTkEntry(self.frame_cert_pfx_campos, textvariable=self.pfx_path_var, placeholder_text="Selecione o arquivo do certificado digital...")
+        entry_cert.grid(row=0, column=1, padx=5, pady=4, sticky="ew")
+
+        btn_buscar_cert = ctk.CTkButton(self.frame_cert_pfx_campos, text="Buscar...", width=80, command=self._selecionar_certificado)
+        btn_buscar_cert.grid(row=0, column=2, padx=5, pady=4)
+
+        lbl_senha = ctk.CTkLabel(self.frame_cert_pfx_campos, text="Senha do Certificado:", font=ctk.CTkFont(size=12))
+        lbl_senha.grid(row=1, column=0, padx=5, pady=4, sticky="w")
+
+        self.entry_senha = ctk.CTkEntry(self.frame_cert_pfx_campos, textvariable=self.pfx_pass_var, show="*")
+        self.entry_senha.grid(row=1, column=1, padx=5, pady=4, sticky="ew")
+
+        btn_validar_cert = ctk.CTkButton(
+            self.frame_cert_pfx_campos,
+            text="Testar Validade",
+            width=110,
+            fg_color="#334155",
+            hover_color="#475569",
+            command=self._validar_certificado
+        )
+        btn_validar_cert.grid(row=1, column=2, padx=5, pady=4)
+
+        self.lbl_cert_status = ctk.CTkLabel(self.frame_cert_pfx_campos, text="", font=ctk.CTkFont(size=11), text_color="#94A3B8")
+        self.lbl_cert_status.grid(row=2, column=0, columnspan=3, padx=5, pady=(2, 6), sticky="w")
+
+        # Inicializa o estado visual do certificado
+        if self.cert_modo_var.get() == "windows":
+            self.frame_cert_pfx_campos.grid_remove()
+        else:
+            self.frame_cert_win_aviso.grid_remove()
+
+        # Card 2: Regras de Leitura do Relatório de Encargos (PDF)
+        card_regras = ctk.CTkFrame(
+            self.frame_parametros,
+            corner_radius=RAIO["md"],
+            fg_color=(CORES["card_light"], CORES["card_dark"]),
+            border_width=1,
+            border_color=(CORES["card_border_light"], CORES["card_border_dark"])
+        )
+        card_regras.grid(row=1, column=0, sticky="ew", pady=(0, 15), padx=(0, 6))
+        card_regras.grid_columnconfigure(0, weight=1)
+
+        lbl_tit_regras = ctk.CTkLabel(
+            card_regras,
+            text="📑 Regras de Leitura do Relatório de Encargos (PDF)",
+            font=ctk.CTkFont(family=FONTE_FAMILIA, size=14, weight="bold")
+        )
+        lbl_tit_regras.pack(anchor="w", padx=15, pady=(12, 4))
+
+        lbl_desc_regras = ctk.CTkLabel(
+            card_regras,
+            text="Selecione quais encargos listados no relatório em PDF compõem o total esperado do FGTS Digital:",
+            font=ctk.CTkFont(size=12),
+            text_color="#94A3B8"
+        )
+        lbl_desc_regras.pack(anchor="w", padx=15, pady=(0, 10))
+
+        # Checkbox 1: FGTS Mensal
+        chk_fgts = ctk.CTkCheckBox(
+            card_regras,
+            text="FGTS (Mensal Regular) — Valor base do FGTS mensal da competência (Cód. 115/150)",
+            variable=self.param_fgts_mensal_var,
+            font=ctk.CTkFont(weight="bold")
+        )
+        chk_fgts.pack(anchor="w", padx=20, pady=5)
+
+        # Checkbox 2: Emp. Créd. Trab.
+        chk_cred_trab = ctk.CTkCheckBox(
+            card_regras,
+            text="Emp. Créd. Trab. (Empréstimo Consignado dos Trabalhadores Ativos) — Recolhido na Guia Mensal",
+            variable=self.param_emp_cred_trab_var,
+            font=ctk.CTkFont(weight="bold")
+        )
+        chk_cred_trab.pack(anchor="w", padx=20, pady=5)
+
+        # Checkbox 3: FGTS Compl.
+        chk_compl = ctk.CTkCheckBox(
+            card_regras,
+            text="FGTS Compl. / Complementar — Folhas complementares ou diferenças salariais",
+            variable=self.param_fgts_compl_var,
+            font=ctk.CTkFont(weight="bold")
+        )
+        chk_compl.pack(anchor="w", padx=20, pady=5)
+
+        # Divisor suave
+        div1 = ctk.CTkFrame(card_regras, height=1, fg_color="#334155")
+        div1.pack(fill="x", padx=20, pady=8)
+
+        lbl_opc = ctk.CTkLabel(
+            card_regras,
+            text="Encargos Adicionais / Casos Específicos (Desmarcados por padrão):",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color="#CBD5E1"
+        )
+        lbl_opc.pack(anchor="w", padx=20, pady=(0, 4))
+
+        # Checkbox 4: Emp. Créd. Tr. Resc.
+        chk_cred_resc = ctk.CTkCheckBox(
+            card_regras,
+            text="Emp. Créd. Tr. Resc. (Consignado de Rescisão) — Marcar apenas se for recolhido junto",
+            variable=self.param_emp_cred_tr_resc_var
+        )
+        chk_cred_resc.pack(anchor="w", padx=20, pady=5)
+
+        # Checkbox 5: Simples Doméstico
+        chk_domestico = ctk.CTkCheckBox(
+            card_regras,
+            text="Simples Doméstico — Guias específicas de empregador doméstico",
+            variable=self.param_simples_dom_var
+        )
+        chk_domestico.pack(anchor="w", padx=20, pady=(5, 14))
+
+        # Card 3: Nomenclatura dos Documentos Emitidos
+        card_nomes = ctk.CTkFrame(
+            self.frame_parametros,
+            corner_radius=RAIO["md"],
+            fg_color=(CORES["card_light"], CORES["card_dark"]),
+            border_width=1,
+            border_color=(CORES["card_border_light"], CORES["card_border_dark"])
+        )
+        card_nomes.grid(row=2, column=0, sticky="ew", pady=(0, 15), padx=(0, 6))
+        card_nomes.grid_columnconfigure(1, weight=1)
+
+        lbl_tit_nomes = ctk.CTkLabel(
+            card_nomes,
+            text="🏷 Nomenclatura dos Documentos Emitidos",
+            font=ctk.CTkFont(family=FONTE_FAMILIA, size=14, weight="bold")
+        )
+        lbl_tit_nomes.grid(row=0, column=0, columnspan=3, padx=15, pady=(12, 4), sticky="w")
+
+        lbl_desc_nomes = ctk.CTkLabel(
+            card_nomes,
+            text="Personalize como os arquivos PDF serão nomeados ao serem baixados do FGTS Digital:",
+            font=ctk.CTkFont(size=12),
+            text_color="#94A3B8"
+        )
+        lbl_desc_nomes.grid(row=1, column=0, columnspan=3, padx=15, pady=(0, 10), sticky="w")
+
+        lbl_n_guia = ctk.CTkLabel(card_nomes, text="Guia FGTS (GFD):", font=ctk.CTkFont(size=12))
+        lbl_n_guia.grid(row=2, column=0, padx=15, pady=4, sticky="w")
+        entry_n_guia = ctk.CTkEntry(card_nomes, textvariable=self.nome_guia_var, placeholder_text="FGTS - Competencia")
+        entry_n_guia.grid(row=2, column=1, padx=5, pady=4, sticky="ew")
+
+        lbl_n_rfgts = ctk.CTkLabel(card_nomes, text="Relatório FGTS:", font=ctk.CTkFont(size=12))
+        lbl_n_rfgts.grid(row=3, column=0, padx=15, pady=4, sticky="w")
+        entry_n_rfgts = ctk.CTkEntry(card_nomes, textvariable=self.nome_rel_fgts_var, placeholder_text="RE FGTS - Competencia")
+        entry_n_rfgts.grid(row=3, column=1, padx=5, pady=4, sticky="ew")
+
+        lbl_n_rcons = ctk.CTkLabel(card_nomes, text="Relatório Consignado:", font=ctk.CTkFont(size=12))
+        lbl_n_rcons.grid(row=4, column=0, padx=15, pady=4, sticky="w")
+        entry_n_rcons = ctk.CTkEntry(card_nomes, textvariable=self.nome_rel_cons_var, placeholder_text="Consignado FGTS - Competencia")
+        entry_n_rcons.grid(row=4, column=1, padx=5, pady=4, sticky="ew")
+
+        # Presets de nomes
+        preset_box = ctk.CTkFrame(card_nomes, fg_color="transparent")
+        preset_box.grid(row=2, column=2, rowspan=3, padx=15, pady=4, sticky="ns")
+
+        btn_pre_padrao = ctk.CTkButton(
+            preset_box,
+            text="Padrão",
+            width=110,
+            height=26,
+            fg_color="#334155",
+            hover_color="#475569",
+            command=lambda: self._aplicar_preset_nomes("padrao")
+        )
+        btn_pre_padrao.pack(pady=2)
+
+        btn_pre_emp = ctk.CTkButton(
+            preset_box,
+            text="+ Empresa",
+            width=110,
+            height=26,
+            fg_color="#334155",
+            hover_color="#475569",
+            command=lambda: self._aplicar_preset_nomes("empresa")
+        )
+        btn_pre_emp.pack(pady=2)
+
+        btn_pre_cnpj = ctk.CTkButton(
+            preset_box,
+            text="+ CNPJ",
+            width=110,
+            height=26,
+            fg_color="#334155",
+            hover_color="#475569",
+            command=lambda: self._aplicar_preset_nomes("cnpj")
+        )
+        btn_pre_cnpj.pack(pady=2)
+
+        lbl_dica = ctk.CTkLabel(
+            card_nomes,
+            text="💡 Dica: Variáveis aceitas: Competencia (ex: 09-2026), CNPJ, Empresa",
+            font=ctk.CTkFont(size=11),
+            text_color="#94A3B8"
+        )
+        lbl_dica.grid(row=5, column=0, columnspan=3, padx=15, pady=(4, 12), sticky="w")
+
+        # Card 4: Barra de Ação (Salvar / Restaurar)
+        card_acoes = ctk.CTkFrame(
+            self.frame_parametros,
+            corner_radius=RAIO["md"],
+            fg_color=(CORES["card_light"], CORES["card_dark"]),
+            border_width=1,
+            border_color=(CORES["card_border_light"], CORES["card_border_dark"])
+        )
+        card_acoes.grid(row=3, column=0, sticky="ew", pady=(0, 20), padx=(0, 6))
+        card_acoes.grid_columnconfigure(0, weight=1)
+
+        box_botoes_salvar = ctk.CTkFrame(card_acoes, fg_color="transparent")
+        box_botoes_salvar.pack(fill="x", padx=15, pady=12)
+
+        self.lbl_status_parametros = ctk.CTkLabel(
+            box_botoes_salvar,
+            text="Os parâmetros são persistidos automaticamente em config/parametros.json.",
+            font=ctk.CTkFont(size=12),
+            text_color="#94A3B8"
+        )
+        self.lbl_status_parametros.pack(side="left")
+
+        btn_restaurar = ctk.CTkButton(
+            box_botoes_salvar,
+            text="🔄 Restaurar Padrões",
+            width=140,
+            fg_color="#334155",
+            hover_color="#475569",
+            command=self._restaurar_parametros_padrao
+        )
+        btn_restaurar.pack(side="right", padx=(5, 0))
+
+        btn_salvar = ctk.CTkButton(
+            box_botoes_salvar,
+            text="💾 Salvar Parâmetros",
+            width=160,
+            height=36,
+            font=ctk.CTkFont(weight="bold"),
+            fg_color=CORES["success"],
+            hover_color=CORES["success_hover"],
+            command=self._salvar_parametros
+        )
+        btn_salvar.pack(side="right", padx=(0, 5))
+
+    def _carregar_parametros(self):
+        """Carrega os parâmetros de config/parametros.json para as variáveis de estado."""
+        cfg_path = Path("config/parametros.json")
+        if not cfg_path.exists():
+            return
+        try:
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                dados = json.load(f)
+
+            regras = dados.get("regras_leitura_pdf", {})
+            if "fgts_mensal" in regras:
+                self.param_fgts_mensal_var.set(bool(regras["fgts_mensal"]))
+            if "emp_cred_trab" in regras:
+                self.param_emp_cred_trab_var.set(bool(regras["emp_cred_trab"]))
+            if "fgts_compl" in regras:
+                self.param_fgts_compl_var.set(bool(regras["fgts_compl"]))
+            if "emp_cred_tr_resc" in regras:
+                self.param_emp_cred_tr_resc_var.set(bool(regras["emp_cred_tr_resc"]))
+            if "simples_dom" in regras:
+                self.param_simples_dom_var.set(bool(regras["simples_dom"]))
+
+            nomes = dados.get("nomenclatura", {})
+            if "guia" in nomes:
+                self.nome_guia_var.set(str(nomes["guia"]))
+            if "relatorio_fgts" in nomes:
+                self.nome_rel_fgts_var.set(str(nomes["relatorio_fgts"]))
+            if "relatorio_consignado" in nomes:
+                self.nome_rel_cons_var.set(str(nomes["relatorio_consignado"]))
+
+            pastas = dados.get("pastas", {})
+            if "output_dir" in pastas:
+                self.output_dir_var.set(str(pastas["output_dir"]))
+        except Exception as e:
+            logger.warning(f"Não foi possível carregar config/parametros.json: {e}")
+
+    def _salvar_parametros(self):
+        """Persiste os parâmetros em config/parametros.json e reaplica regras."""
+        cfg_path = Path("config/parametros.json")
+        dados = {
+            "regras_leitura_pdf": {
+                "fgts_mensal": self.param_fgts_mensal_var.get(),
+                "emp_cred_trab": self.param_emp_cred_trab_var.get(),
+                "fgts_compl": self.param_fgts_compl_var.get(),
+                "emp_cred_tr_resc": self.param_emp_cred_tr_resc_var.get(),
+                "simples_dom": self.param_simples_dom_var.get()
+            },
+            "nomenclatura": {
+                "guia": self.nome_guia_var.get().strip(),
+                "relatorio_fgts": self.nome_rel_fgts_var.get().strip(),
+                "relatorio_consignado": self.nome_rel_cons_var.get().strip()
+            },
+            "pastas": {
+                "output_dir": self.output_dir_var.get().strip()
+            }
+        }
+        try:
+            cfg_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(cfg_path, "w", encoding="utf-8") as f:
+                json.dump(dados, f, indent=2, ensure_ascii=False)
+            logger.info("Parâmetros do sistema salvos com sucesso em config/parametros.json.")
+
+            if hasattr(self, "lbl_status_parametros"):
+                self.lbl_status_parametros.configure(
+                    text="✔ Parâmetros salvos com sucesso em config/parametros.json!",
+                    text_color="#22C55E"
+                )
+
+            # Se já houver PDF carregado, reprocessa imediatamente para atualizar os cálculos
+            if self.pdf_relatorio_path_var.get() and Path(self.pdf_relatorio_path_var.get()).exists():
+                self._processar_pdf_folha()
+
+            messagebox.showinfo("Parâmetros Salvos", "Parâmetros configurados e salvos com sucesso!")
+        except Exception as e:
+            logger.error(f"Erro ao salvar parametros.json: {e}")
+            if hasattr(self, "lbl_status_parametros"):
+                self.lbl_status_parametros.configure(
+                    text=f"✖ Erro ao salvar: {e}",
+                    text_color="#EF4444"
+                )
+            messagebox.showerror("Erro", f"Não foi possível salvar os parâmetros:\n{e}")
+
+    def _restaurar_parametros_padrao(self):
+        """Restaura as configurações de fábrica/padrão recomendadas."""
+        self.param_fgts_mensal_var.set(True)
+        self.param_emp_cred_trab_var.set(True)
+        self.param_fgts_compl_var.set(True)
+        self.param_emp_cred_tr_resc_var.set(False)
+        self.param_simples_dom_var.set(False)
+        self.nome_guia_var.set("FGTS - Competencia")
+        self.nome_rel_fgts_var.set("RE FGTS - Competencia")
+        self.nome_rel_cons_var.set("Consignado FGTS - Competencia")
+        self.output_dir_var.set(str(settings.DEFAULT_OUTPUT_DIR))
+        self._salvar_parametros()
+
+    # -------------------------------------------------------------------------
     # MÉTODOS DE AÇÃO & LÓGICA DE DADOS
     # -------------------------------------------------------------------------
 
@@ -1215,8 +1465,15 @@ class FGTSDigitalApp(ctk.CTk):
             return
 
         try:
-            logger.info(f"Lendo relatório PDF da folha: {caminho.name}...")
-            empresas = RelatorioFolhaParser.parse_pdf(caminho)
+            logger.info(f"Lendo relatório PDF: {caminho.name}...")
+            regras = {
+                "fgts_mensal": self.param_fgts_mensal_var.get(),
+                "emp_cred_trab": self.param_emp_cred_trab_var.get(),
+                "fgts_compl": self.param_fgts_compl_var.get(),
+                "emp_cred_tr_resc": self.param_emp_cred_tr_resc_var.get(),
+                "simples_dom": self.param_simples_dom_var.get(),
+            }
+            empresas = RelatorioFolhaParser.parse_pdf(caminho, regras_encargos=regras)
             self.empresas_folha_pdf = empresas
             self._renderizar_tabela_folha()
 
