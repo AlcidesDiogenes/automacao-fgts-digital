@@ -20,7 +20,8 @@ from src.modules.fgts_digital.parser import (
     formatar_cnpj,
     sanitizar_nome_arquivo,
     converter_valor_br,
-    formatar_nome_documento
+    formatar_nome_documento,
+    extrair_valor_fgts_de_texto
 )
 from src.utils.logger import logger
 
@@ -300,49 +301,135 @@ class FGTSDigitalBot:
             logger.error(f"Erro ao trocar perfil para {cnpj_fmt}: {e}")
             return {"sucesso": False, "motivo": str(e)}
 
-    def _extrair_valor_tela_fgts(self) -> float:
+    def _obter_container_mensal(self, fgts_esperado: float = 0.0) -> Optional[Any]:
         """
-        Tenta extrair o valor numérico total a recolher exibido na tela de Guia Rápida.
-        Prioriza os blocos 'Total Devedor' e 'Total Guia' do FGTS Digital.
-        Retorna 0.0 caso não consiga identificar.
+        Localiza o card/container específico da guia Mensal na tela de Guia Rápida.
+        Se houver múltiplos cards mensais (ex: guia residual e guia principal com consignado),
+        avalia cada card e seleciona aquele cujo valor mais se aproxima de `fgts_esperado`
+        (ou o de maior valor caso fgts_esperado seja 0).
+        Evita interferência de guias Rescisórias não pagas que aparecem no mesmo portal.
+        """
+        import re
+        try:
+            loc_headers = self.page.locator("h1, h2, h3, h4, h5, div, span, strong").filter(
+                has_text=re.compile(r"Mensal\s*-\s*Vencimento", re.IGNORECASE)
+            ).all()
+
+            candidatos = []
+            seen_signatures = set()
+
+            for header in loc_headers:
+                if not header.is_visible():
+                    continue
+
+                for ancestor_xpath in [
+                    "xpath=ancestor::*[contains(@class, 'card') or contains(@class, 'br-card') or contains(@class, 'cardListItem') or self::fieldset][1]",
+                    "xpath=ancestor::div[contains(@class, 'border') or contains(@style, 'border') or contains(@class, 'box')][1]",
+                    "xpath=ancestor::div[button[contains(., 'Emitir')] and (.//*[contains(., 'FGTS')] or .//*[contains(., 'Total')])][1]",
+                    "xpath=ancestor::div[2]",
+                    "xpath=ancestor::div[3]",
+                    "xpath=ancestor::div[4]"
+                ]:
+                    try:
+                        cand = header.locator(ancestor_xpath).first
+                        if cand.count() > 0 and cand.is_visible():
+                            txt = cand.inner_text()
+                            txt_lower = txt.lower()
+                            if "mensal" in txt_lower and "rescisória" not in txt_lower and "rescisoria" not in txt_lower:
+                                sig = txt[:150]
+                                if sig not in seen_signatures:
+                                    seen_signatures.add(sig)
+                                    val = extrair_valor_fgts_de_texto(txt, fgts_esperado=fgts_esperado)
+                                    candidatos.append((cand, val, txt))
+                                break
+                    except Exception:
+                        continue
+
+            # Fallback caso ancestrais não tenham retornado candidatos
+            if not candidatos:
+                cards = self.page.locator("div.card, .br-card, fieldset, div").filter(
+                    has_text=re.compile(r"Mensal\s*-\s*Vencimento", re.IGNORECASE)
+                ).all()
+                for c in cards:
+                    if c.is_visible():
+                        txt = c.inner_text()
+                        txt_lower = txt.lower()
+                        if "mensal" in txt_lower and "rescisória" not in txt_lower and "rescisoria" not in txt_lower:
+                            sig = txt[:150]
+                            if sig not in seen_signatures:
+                                seen_signatures.add(sig)
+                                val = extrair_valor_fgts_de_texto(txt, fgts_esperado=fgts_esperado)
+                                candidatos.append((c, val, txt))
+
+            if not candidatos:
+                return None
+
+            if len(candidatos) == 1:
+                cand, val, _ = candidatos[0]
+                logger.info(f"Container único da Guia Mensal identificado (Valor apurado: R$ {val:.2f}).")
+                return cand
+
+            # Mais de um container mensal identificado
+            logger.info(f"Foram identificados {len(candidatos)} cards mensais na tela. Selecionando o mais adequado...")
+            for idx, (_, val, _) in enumerate(candidatos, 1):
+                logger.info(f"  -> Card {idx}: Valor apurado R$ {val:.2f}")
+
+            if fgts_esperado > 0:
+                candidatos.sort(key=lambda item: abs(item[1] - fgts_esperado))
+                melhor_cand, melhor_val, _ = candidatos[0]
+                logger.info(
+                    f"Card selecionado por proximidade com valor esperado: R$ {melhor_val:.2f} (Esperado: R$ {fgts_esperado:.2f} | Dif: R$ {abs(melhor_val - fgts_esperado):.2f})."
+                )
+                return melhor_cand
+            else:
+                candidatos.sort(key=lambda item: item[1], reverse=True)
+                melhor_cand, melhor_val, _ = candidatos[0]
+                logger.info(f"Card selecionado pelo maior valor apurado: R$ {melhor_val:.2f}.")
+                return melhor_cand
+
+        except Exception as e:
+            logger.debug(f"Aviso ao localizar container mensal: {e}")
+
+        return None
+
+    def _extrair_valor_tela_fgts(self, container_mensal: Optional[Any] = None, fgts_esperado: float = 0.0) -> float:
+        """
+        Extrai o valor numérico total a recolher da Guia Rápida MENSAL.
+        Prioriza o container e bloco exclusivo da guia Mensal para evitar que guias rescisórias
+        não pagas pelo cliente (ou outros débitos) somados no 'Total Devedor' causem falsas divergências.
         """
         import re
 
-        # 1. Busca por padrões com rótulos de Total específicos do FGTS Digital
+        # 1. Se temos o container isolado do card Mensal, avalia o texto exclusivo dele
+        if container_mensal:
+            try:
+                txt_mensal = container_mensal.inner_text()
+                val = extrair_valor_fgts_de_texto(txt_mensal, fgts_esperado=fgts_esperado)
+                if val > 0:
+                    logger.info(f"Valor extraído diretamente do card Mensal: R$ {val:.2f}")
+                    return val
+            except Exception as e:
+                logger.warning(f"Erro ao extrair valor do container mensal: {e}")
+
+        # 2. Avalia o texto da página inteira usando o parser especializado em Mensal
         try:
             texto_geral = self.page.inner_text("body")
-            
-            # Padrão 1: Total Devedor \n R$ 7.090,09 ou Total Guia \n 7.090,09
-            match_total = re.search(r"(?:Total\s*Devedor|Total\s*Guia)[^\d]*(\d{1,3}(?:\.\d{3})*,\d{2})", texto_geral, re.IGNORECASE)
-            if match_total:
-                val_str = match_total.group(1).replace(".", "").replace(",", ".")
-                val = float(val_str)
-                if val > 0:
-                    logger.info(f"Valor total identificado via rótulo no portal: R$ {val:.2f}")
-                    return val
+            val = extrair_valor_fgts_de_texto(texto_geral, fgts_esperado=fgts_esperado)
+            if val > 0:
+                logger.info(f"Valor Mensal identificado via parser textual: R$ {val:.2f}")
+                return val
+        except Exception as e:
+            logger.debug(f"Erro ao ler texto geral da página: {e}")
 
-            # Padrão 2: Vencimento da Guia ... Total Guia
-            match_guia = re.search(r"(?:Vencimento\s*da\s*Guia|Valor\s*Total)[^\d]*(\d{1,3}(?:\.\d{3})*,\d{2})", texto_geral, re.IGNORECASE)
-            if match_guia:
-                val_str = match_guia.group(1).replace(".", "").replace(",", ".")
-                val = float(val_str)
-                if val > 0:
-                    return val
-        except Exception:
-            pass
-
-        # 2. Busca por seletores específicos
+        # 3. Busca por seletores específicos mapeados
         for seletor in sel.CAMPOS_VALOR_TOTAL_TELA:
             try:
                 elementos = self.page.locator(seletor).all()
                 for el in elementos:
                     texto = el.inner_text().strip()
-                    matches = re.findall(r"(\d{1,3}(?:\.\d{3})*,\d{2})", texto)
-                    if matches:
-                        val_str = matches[-1].replace(".", "").replace(",", ".")
-                        val = float(val_str)
-                        if val > 0:
-                            return val
+                    val = converter_valor_br(texto)
+                    if val > 0:
+                        return val
             except Exception:
                 continue
 
@@ -421,10 +508,16 @@ class FGTSDigitalBot:
             logger.error(f"Erro ao selecionar competência e pesquisar: {e}")
             return False
 
-    def _baixar_relatorio_pdf(self, secao_nome: str, caminho_destino: Path, indice_fallback: int = 0) -> bool:
+    def _baixar_relatorio_pdf(
+        self,
+        secao_nome: str,
+        caminho_destino: Path,
+        indice_fallback: int = 0,
+        container_mensal: Optional[Any] = None
+    ) -> bool:
         """
         Localiza e faz o download do relatório analítico em PDF da seção especificada ('FGTS' ou 'Consignado').
-        Usa busca hierárquica por cabeçalho e fallback por índice de botões PDF visíveis.
+        Prioriza os botões dentro do container da Guia Mensal para não baixar relatórios de guias Rescisórias.
         """
         logger.info(f"Buscando botão de download do relatório PDF ({secao_nome})...")
         caminho_destino.parent.mkdir(parents=True, exist_ok=True)
@@ -442,23 +535,70 @@ class FGTSDigitalBot:
 
         btn_alvo = None
 
-        # 1. Procura próximo ao cabeçalho da seção
-        try:
-            cabecalhos = self.page.locator("h1, h2, h3, h4, h5, h6, strong, span.title, div.card-header").filter(has_text=secao_nome).all()
-            for cab in cabecalhos:
-                parent = cab.locator("xpath=..")
-                for s in seletores_pdf:
-                    botoes = parent.locator(s)
-                    if botoes.count() > 0 and botoes.first.is_visible():
-                        btn_alvo = botoes.first
-                        logger.info(f"Botão PDF para '{secao_nome}' localizado no cabeçalho da seção.")
+        # 1. Se temos container mensal, procura os botões da seção DENTRO do container mensal
+        if container_mensal:
+            try:
+                cabecalhos = container_mensal.locator("h1, h2, h3, h4, h5, h6, strong, span.title, div.card-header, div, span").filter(has_text=secao_nome).all()
+                for cab in cabecalhos:
+                    parent = cab.locator("xpath=..")
+                    for s in seletores_pdf:
+                        botoes = parent.locator(s)
+                        if botoes.count() > 0 and botoes.first.is_visible():
+                            btn_alvo = botoes.first
+                            logger.info(f"Botão PDF para '{secao_nome}' localizado no cabeçalho dentro do container Mensal.")
+                            break
+                    if btn_alvo:
                         break
-                if btn_alvo:
-                    break
-        except Exception as e:
-            logger.debug(f"Tentativa 1 de localizar botão {secao_nome} falhou: {e}")
 
-        # 2. Fallback: seleciona por índice global dos botões de PDF visíveis
+                if not btn_alvo:
+                    for s in seletores_pdf:
+                        botoes = container_mensal.locator(s).all()
+                        visiveis = [b for b in botoes if b.is_visible()]
+                        idx_rel = 0 if secao_nome.lower() == "fgts" else 1
+                        if len(visiveis) > idx_rel:
+                            btn_alvo = visiveis[idx_rel]
+                            logger.info(f"Botão PDF para '{secao_nome}' selecionado no container Mensal por índice {idx_rel}.")
+                            break
+            except Exception as e:
+                logger.debug(f"Tentativa de buscar botão PDF no container mensal falhou: {e}")
+
+        # 2. Se não encontrou no container mensal, busca após o texto 'Mensal - Vencimento'
+        if not btn_alvo:
+            try:
+                loc_header_mensal = self.page.locator("text=/Mensal\\s*-\\s*Vencimento/i").first
+                if loc_header_mensal.is_visible(timeout=1000):
+                    cabs_apos = loc_header_mensal.locator(f"xpath=following::*[self::h1 or self::h2 or self::h3 or self::h4 or self::h5 or self::h6 or self::strong or self::div or self::span][contains(text(), '{secao_nome}')]").all()
+                    for cab in cabs_apos:
+                        parent = cab.locator("xpath=..")
+                        for s in seletores_pdf:
+                            botoes = parent.locator(s)
+                            if botoes.count() > 0 and botoes.first.is_visible():
+                                btn_alvo = botoes.first
+                                logger.info(f"Botão PDF para '{secao_nome}' localizado após cabeçalho Mensal.")
+                                break
+                        if btn_alvo:
+                            break
+            except Exception as e:
+                logger.debug(f"Busca de PDF após header mensal falhou: {e}")
+
+        # 3. Procura geral próximo ao cabeçalho da seção
+        if not btn_alvo:
+            try:
+                cabecalhos = self.page.locator("h1, h2, h3, h4, h5, h6, strong, span.title, div.card-header").filter(has_text=secao_nome).all()
+                for cab in cabecalhos:
+                    parent = cab.locator("xpath=..")
+                    for s in seletores_pdf:
+                        botoes = parent.locator(s)
+                        if botoes.count() > 0 and botoes.first.is_visible():
+                            btn_alvo = botoes.first
+                            logger.info(f"Botão PDF para '{secao_nome}' localizado no cabeçalho da seção.")
+                            break
+                    if btn_alvo:
+                        break
+            except Exception as e:
+                logger.debug(f"Tentativa geral de localizar botão {secao_nome} falhou: {e}")
+
+        # 4. Fallback: seleciona por índice global dos botões de PDF visíveis
         if not btn_alvo:
             logger.info(f"Tentando localizar botão PDF para '{secao_nome}' via índice de botões visíveis (índice: {indice_fallback})...")
             for s in seletores_pdf:
@@ -536,13 +676,13 @@ class FGTSDigitalBot:
             return candidatos[0][1]
         return None
 
-    def _emitir_guia_gfd(self, caminho_guia: Path) -> bool:
+    def _emitir_guia_gfd(self, caminho_guia: Path, container_mensal: Optional[Any] = None) -> bool:
         """
-        Clica no botão 'Emitir guia' e intercepta o download do arquivo PDF da GFD.
+        Clica no botão 'Emitir guia' da Guia MENSAL e intercepta o download do arquivo PDF da GFD.
         Trata o modal de confirmação 'Gerar guia - Confirma nova emissão?' e botões pós-emissão.
         Conta com listener nativo de downloads e fallback para garantir a persistência na pasta.
         """
-        logger.info("Solicitando emissão da guia GFD...")
+        logger.info("Solicitando emissão da guia GFD Mensal...")
         caminho_guia.parent.mkdir(parents=True, exist_ok=True)
 
         downloads_capturados = []
@@ -563,19 +703,46 @@ class FGTSDigitalBot:
                 logger.info("Modal 'Gerar guia' já está aberto! Clicando em 'Confirmar'...")
                 btn_confirmar.click()
             else:
-                # 2. Localiza e clica no botão principal 'Emitir guia'
+                # 2. Localiza o botão 'Emitir guia' priorizando a Guia MENSAL
                 btn_emitir = None
-                for s in sel.BTN_EMITIR_GUIA:
-                    loc = self.page.locator(s)
-                    if loc.count() > 0 and loc.first.is_visible():
-                        btn_emitir = loc.first
-                        break
+
+                # 2a. Busca no container isolado da Guia Mensal
+                if container_mensal:
+                    try:
+                        for s in ["button:has-text('Emitir guia')", "button:has-text('Emitir Guia')", "button:has-text('Emitir')"]:
+                            loc = container_mensal.locator(s)
+                            if loc.count() > 0 and loc.first.is_visible():
+                                btn_emitir = loc.first
+                                logger.info("Botão 'Emitir guia' localizado diretamente no card Mensal.")
+                                break
+                    except Exception:
+                        pass
+
+                # 2b. Busca pelo botão que segue imediatamente o cabeçalho 'Mensal - Vencimento'
+                if not btn_emitir:
+                    try:
+                        loc_header_mensal = self.page.locator("text=/Mensal\\s*-\\s*Vencimento/i").first
+                        if loc_header_mensal.is_visible(timeout=1000):
+                            btn_apos = loc_header_mensal.locator("xpath=following::button[contains(., 'Emitir')][1]").first
+                            if btn_apos.is_visible(timeout=1500):
+                                btn_emitir = btn_apos
+                                logger.info("Botão 'Emitir guia' localizado imediatamente após o cabeçalho 'Mensal - Vencimento'.")
+                    except Exception:
+                        pass
+
+                # 2c. Fallback geral para qualquer botão 'Emitir guia' visível
+                if not btn_emitir:
+                    for s in sel.BTN_EMITIR_GUIA:
+                        loc = self.page.locator(s)
+                        if loc.count() > 0 and loc.first.is_visible():
+                            btn_emitir = loc.first
+                            break
 
                 if not btn_emitir:
                     logger.warning("Botão 'Emitir guia' não localizado na tela.")
                     return False
 
-                logger.info("Clicando no botão 'Emitir guia'...")
+                logger.info("Clicando no botão 'Emitir guia' da Guia Mensal...")
                 btn_emitir.click()
                 time.sleep(1.0)
 
@@ -738,11 +905,13 @@ class FGTSDigitalBot:
                 time.sleep(1.0)
                 return resultado
 
-            # 4. Leitura e Validação do Valor Apurado na Tela
-            valor_tela = self._extrair_valor_tela_fgts()
+            # 4. Leitura e Validação do Valor Apurado na Tela (priorizando Guia Mensal)
+            container_mensal = self._obter_container_mensal(fgts_esperado=fgts_esperado)
+            valor_tela = self._extrair_valor_tela_fgts(container_mensal=container_mensal, fgts_esperado=fgts_esperado)
             if valor_tela == 0.0:
                 time.sleep(2.0)
-                valor_tela = self._extrair_valor_tela_fgts()
+                container_mensal = self._obter_container_mensal(fgts_esperado=fgts_esperado)
+                valor_tela = self._extrair_valor_tela_fgts(container_mensal=container_mensal, fgts_esperado=fgts_esperado)
 
             resultado["valor_guia"] = valor_tela
 
@@ -794,13 +963,19 @@ class FGTSDigitalBot:
                     # Baixa os relatórios analíticos em PDF para auditoria contábil
                     arquivos_audit = []
                     caminho_rel_fgts_div = pasta_empresa / f"Divergencia_{nome_rel_fgts}"
-                    if self._baixar_relatorio_pdf("FGTS", caminho_rel_fgts_div, indice_fallback=0):
+                    if self._baixar_relatorio_pdf("FGTS", caminho_rel_fgts_div, indice_fallback=0, container_mensal=container_mensal):
                         arquivos_audit.append(caminho_rel_fgts_div.name)
 
                     try:
-                        if "consignado" in self.page.inner_text("body").lower():
+                        tem_consignado = False
+                        if container_mensal:
+                            tem_consignado = "consignado" in container_mensal.inner_text().lower()
+                        if not tem_consignado:
+                            tem_consignado = "consignado" in self.page.inner_text("body").lower()
+
+                        if tem_consignado:
                             caminho_rel_cons_div = pasta_empresa / f"Divergencia_{nome_rel_cons}"
-                            if self._baixar_relatorio_pdf("Consignado", caminho_rel_cons_div, indice_fallback=1):
+                            if self._baixar_relatorio_pdf("Consignado", caminho_rel_cons_div, indice_fallback=1, container_mensal=container_mensal):
                                 arquivos_audit.append(caminho_rel_cons_div.name)
                     except Exception:
                         pass
@@ -815,13 +990,19 @@ class FGTSDigitalBot:
             # 6. Download dos Relatórios Analíticos em PDF (FGTS e Consignado)
             arquivos_baixados = []
             caminho_rel_fgts = pasta_empresa / nome_rel_fgts
-            if self._baixar_relatorio_pdf("FGTS", caminho_rel_fgts, indice_fallback=0):
+            if self._baixar_relatorio_pdf("FGTS", caminho_rel_fgts, indice_fallback=0, container_mensal=container_mensal):
                 arquivos_baixados.append(caminho_rel_fgts.name)
 
             try:
-                if "consignado" in self.page.inner_text("body").lower():
+                tem_consignado = False
+                if container_mensal:
+                    tem_consignado = "consignado" in container_mensal.inner_text().lower()
+                if not tem_consignado:
+                    tem_consignado = "consignado" in self.page.inner_text("body").lower()
+
+                if tem_consignado:
                     caminho_rel_cons = pasta_empresa / nome_rel_cons
-                    if self._baixar_relatorio_pdf("Consignado", caminho_rel_cons, indice_fallback=1):
+                    if self._baixar_relatorio_pdf("Consignado", caminho_rel_cons, indice_fallback=1, container_mensal=container_mensal):
                         arquivos_baixados.append(caminho_rel_cons.name)
             except Exception as e:
                 logger.warning(f"{cnpj_fmt}: Falha ao verificar/baixar relatório consignado: {e}")
@@ -831,7 +1012,7 @@ class FGTSDigitalBot:
 
             # 7. Emissão da Guia (GFD)
             caminho_guia = pasta_empresa / nome_guia
-            sucesso_guia = self._emitir_guia_gfd(caminho_guia)
+            sucesso_guia = self._emitir_guia_gfd(caminho_guia, container_mensal=container_mensal)
             if sucesso_guia:
                 resultado["status"] = "Sucesso - Guia Emitida"
                 resultado["arquivo_guia"] = caminho_guia.name

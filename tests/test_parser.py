@@ -82,3 +82,103 @@ def test_formatar_nome_documento():
     assert formatar_nome_documento("FGTS - Competencia - Empresa", ctx) == "FGTS - 09-2026 - ALFA COMERCIO FICTICIO.pdf"
     assert formatar_nome_documento("FGTS_Competencia_CNPJ", ctx) == "FGTS_09-2026_11444777000161.pdf"
 
+
+def test_extrair_valor_fgts_com_rescisoria_e_mensal():
+    from src.modules.fgts_digital.parser import extrair_valor_fgts_de_texto
+    texto_tela = """
+    Competência de Apuração
+    09/2026
+    Total Devedor
+    R$ 2.585,09
+
+    Rescisória - Vencimento da Guia: 14/10/2026
+    FGTS
+    Todos os valores exibidos estão expressos em reais (R$).
+    Competência de Referência  Vencimento dos Débitos  Quantidade de Trabalhadores  FGTS Mensal  FGTS Rescisório  Indenização Compensatória  Encargos FGTS
+    11/09/2026  1  0,00  0,00  327,26  36,60
+    Total  0,00  0,00  327,26  36,60
+
+    Mensal - Vencimento da Guia: 20/10/2026
+    Guias relacionadas aguardando pagamento
+    0126101366600671-1
+    FGTS
+    Todos os valores exibidos estão expressos em reais (R$).
+    Competência de Referência  Vencimento dos Débitos  Quantidade de Trabalhadores  FGTS Mensal  FGTS Rescisório
+    20/10/2026  6  1.805,65  0,00
+    Total  1.805,65  0,00
+
+    Consignado
+    Vencimento dos Débitos  Quantidade de Trabalhadores  Consignado  Total
+    20/10/2026  1  415,58  415,58
+    Total Consignado  415,58
+
+    Total Guia  2.221,23
+    """
+    # Deve ignorar o Total Devedor de 2.585,09 e a Rescisória de 327,26, pegando o Total Guia do Mensal de 2.221,23!
+    val = extrair_valor_fgts_de_texto(texto_tela)
+    assert val == 2221.23
+
+
+def test_extrair_valor_fgts_apenas_mensal():
+    from src.modules.fgts_digital.parser import extrair_valor_fgts_de_texto
+    texto_tela = """
+    Competência de Apuração: 09/2026
+    Total Devedor: R$ 1.805,65
+
+    Mensal - Vencimento da Guia: 20/10/2026
+    FGTS
+    Competência  Trabalhadores  FGTS Mensal
+    20/10/2026   6              1.805,65
+    Total Guia   1.805,65
+    """
+    assert extrair_valor_fgts_de_texto(texto_tela) == 1805.65
+
+
+def test_extrair_valor_fgts_multiplos_cards_mensais():
+    """
+    Testa o cenário real com 2 cards mensais na mesma competência:
+    Card 1: Guia residual (1 trabalhador) -> Total Guia: R$ 23,45 (vencimento 19/10/2026)
+    Card 2: Guia principal (96 trabalhadores) -> FGTS: 10.000,00 + Consignado: 2.345,67 -> Total Guia: R$ 12.345,67 (vencimento 20/10/2026)
+    Total Devedor da página: R$ 12.369,12 (soma de ambos)
+    """
+    from src.modules.fgts_digital.parser import extrair_valor_fgts_de_texto
+    texto_tela = """
+    Competência de Apuração
+    09/2026
+    Total Devedor
+    R$ 12.369,12
+
+    Mensal - Vencimento da Guia: 19/10/2026
+    FGTS
+    Todos os valores exibidos estão expressos em reais (R$).
+    Competência de Referência Vencimento dos Débitos Quantidade de Trabalhadores FGTS Mensal FGTS Rescisório Indenização Compensatória Encargos FGTS
+    09/2026 19/10/2026 1 23,45 0,00 0,00 0,00
+    Total 23,45 0,00 0,00 0,00
+    Total Guia 23,45
+
+    Mensal - Vencimento da Guia: 20/10/2026
+    Guias relacionadas aguardando pagamento
+    0126101344400555-1
+    FGTS
+    Todos os valores exibidos estão expressos em reais (R$).
+    Competência de Referência Vencimento dos Débitos Quantidade de Trabalhadores FGTS Mensal FGTS Rescisório Indenização Compensatória Encargos FGTS
+    09/2026 20/10/2026 96 10.000,00 0,00 0,00 0,00
+    Total 10.000,00 0,00 0,00 0,00
+
+    Consignado
+    Vencimento dos Débitos Quantidade de Trabalhadores Consignado Total
+    20/10/2026 23 2.345,67 2.345,67
+    Total Consignado 2.345,67
+
+    Total Guia 12.345,67
+    """
+
+    # 1. Com fgts_esperado da folha (12.345,67 = FGTS + Consignado), deve selecionar Card 2 perfeitamente
+    val = extrair_valor_fgts_de_texto(texto_tela, fgts_esperado=12345.67)
+    assert val == 12345.67
+
+    # 2. Sem fgts_esperado (0.0), deve selecionar o card principal de maior valor
+    val_max = extrair_valor_fgts_de_texto(texto_tela, fgts_esperado=0.0)
+    assert val_max == 12345.67
+
+

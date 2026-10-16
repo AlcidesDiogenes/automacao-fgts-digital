@@ -6,7 +6,7 @@
 ![Status](https://img.shields.io/badge/status-active-success.svg)
 ![License](https://img.shields.io/badge/license-MIT-lightgrey.svg)
 
-Sistema corporativo de alto desempenho desenvolvido para escritórios de contabilidade e departamentos fiscais/DP. Automatiza o acesso ao portal **FGTS Digital**, gerencia procurações eletrônicas (**SPE**), audita valores de encargos e emite em lote as **Guias do FGTS Digital (GFD com PIX)** e seus respectivos **Relatórios Analíticos de Débitos**.
+Sistema corporativo de alto desempenho desenvolvido para escritórios de contabilidade e departamentos fiscais/DP. Automatiza o acesso ao portal **FGTS Digital**, gerencia procurações eletrônicas (**SPE**), audita valores de encargos e emite em lote as **Guias do FGTS Digital (GFD)** e seus respectivos **Relatórios Analíticos de Débitos**.
 
 ---
 
@@ -35,10 +35,10 @@ O fechamento mensal de encargos trabalhistas exige a apuração e geração de g
 
 A **Automação FGTS Digital Pro** elimina o trabalho manual repetitivo:
 1. Conecta-se com o Certificado Digital do contador (instalado no Windows ou via arquivo `.pfx`).
-2. Lê a lista de empresas outorgantes (via Excel ou diretamente do relatório de folha de pagamento).
+2. Lê a lista de empresas outorgantes (via planilha Excel ou diretamente do relatório em PDF do Sistema Domínio).
 3. Efetua a troca de perfil para cada cliente no portal.
-4. Audita se o valor no FGTS Digital bate com o relatório de encargos da folha (com suporte a FGTS de empréstimo consignado).
-5. Emite as guias GFD em PDF com PIX e baixa os relatórios detalhados de débitos.
+4. Audita se o valor no FGTS Digital bate com o relatório de encargos (com suporte consolidado a FGTS Mensal e FGTS de empréstimo consignado).
+5. Emite as guias GFD em PDF e baixa os relatórios detalhados de débitos.
 6. Organiza tudo em pastas por competência e gera uma planilha consolidada com o status de cada empresa.
 
 ---
@@ -48,11 +48,11 @@ A **Automação FGTS Digital Pro** elimina o trabalho manual repetitivo:
 - **Duplo Modo de Certificado Digital**:
   - *Certificado Instalado no Windows*: Acesso automático e transparente aos certificados A1/A3 instalados na máquina, sem necessidade de selecionar arquivo ou redigitar senhas.
   - *Arquivo PFX/P12*: Carregamento seguro de arquivo físico com validação criptográfica de senha, titularidade e data de validade.
-- **Importador Inteligente de Relatórios de Folha (PDF Parser)**:
-  - Leitura de PDFs de encargos gerados por sistemas de folha (ex: Domínio, Fortes, Alterdata, Totvs).
-  - Extração automática de CNPJs, Razões Sociais, valores de FGTS Mensal e FGTS Consignado.
+- **Importador de Relatórios em PDF (Exclusivo Sistema Domínio)**:
+  - Atualmente projetado para leitura e extração exclusiva do modelo de relatório em PDF gerado pelo **Sistema Domínio (Thomson Reuters)**.
+  - Extração automática de CNPJs, Razões Sociais e consolidação precisa de encargos: **FGTS**, **FGTS 13°**, **Emp. Créd. Trab.** (Consignado Trabalhador Ativo) e **Emp. Créd. Tr. Resc.** (Consignado Rescindido).
 - **Modo "Apenas Conferir Valores"**:
-  - Consulta os débitos apurados no portal e cruza com a folha sem emitir ou recalcular guias.
+  - Consulta os débitos apurados no portal e cruza com os valores esperados sem emitir ou recalcular guias.
   - Alerta sobre divergências de centavos, guias já quitadas ou ausência de débitos.
 - **Nomenclatura Totalmente Flexível**:
   - Padrões configuráveis para Guia FGTS, Relatório Analítico e Relatório Consignado.
@@ -79,23 +79,20 @@ A **Automação FGTS Digital Pro** elimina o trabalho manual repetitivo:
 
 ## 🖥️ Interface Gráfica (UI v2.0 Pro)
 
-A interface foi projetada seguindo diretrizes rígidas de ergonomia e confiabilidade visual:
+A interface foi projetada seguindo diretrizes rígidas de ergonomia e confiabilidade visual, com arquitetura baseada em **Sidebar Lateral de Navegação** e **Paineis Temáticos**:
 
-1. **Header Executivo**:
-   - Título, versão e alternador instantâneo de tema (**Dark / Light**).
-2. **Cards de Status e KPIs**:
-   - **Total de Empresas**: Quantidade total de clientes na fila de processamento.
-   - **Processando Atual**: Indicador em tempo real da empresa sob ação do robô.
-   - **Guias / Divergências**: Contabiliza guias emitidas com sucesso (no modo padrão) ou empresas divergentes (no modo conferência).
-3. **Painel de Configuração com Rolagem Integrada**:
-   - Seletor de modo de certificado (Instalado vs Arquivo PFX).
-   - Origem dos dados (Planilha Excel ou Relatório PDF).
-   - Seleção da competência (Mês anterior, Mês atual ou Personalizada).
-   - Checkbox "Apenas conferir se o valor do relatório e do sistema está igual".
-   - Modelos de nomes de saída configuráveis.
-4. **Console de Logs e Ações**:
-   - Monitoramento linha a linha da execução.
-   - Botão direto para **"Abrir Pasta de Arquivos"** gerados.
+1. **Sidebar Lateral de Navegação**:
+   - ⚙ **Painel de Controle**: Configuração da competência de apuração, opções de auditoria/emissão, seleção de pastas e armazenamento e acionamento do robô.
+   - 📑 **Importar Relatório (PDF)**: Leitor inteligente do relatório de encargos do **Sistema Domínio** com visualização em tabela editável e exportação para Excel/PDF.
+   - 📋 **Fila de Empresas**: Gestão da planilha de CNPJs carregados, contadores e status de execução.
+   - 🛠 **Parâmetros**: Gestão do Certificado Digital (Windows ou Arquivo A1/PFX), regras de leitura do PDF (FGTS Mensal, Consignado e Complementares) e personalização da nomenclatura dos documentos emitidos, com persistência automática em `config/parametros.json`.
+   - 📜 **Logs & Auditoria**: Console com terminal em tempo real e monitoramento dos passos do robô.
+2. **Cards de Status e KPIs Executivos**:
+   - **Empresas no Lote**: Quantidade de clientes na fila de processamento.
+   - **Certificado Digital**: Indicador em tempo real do status e validade do certificado (Windows ou A1).
+   - **Auditoria de Valores**: Indicador visual da trava anti-divergência de valores com a folha.
+3. **Persistência Centralizada**:
+   - Todas as configurações e regras de encargos são salvas em `config/parametros.json` e recarregadas automaticamente ao abrir o sistema.
 
 ---
 
@@ -106,7 +103,7 @@ Para cada empresa da lista:
 1. Alterna o perfil do usuário logado para o CNPJ do cliente.
 2. Acessa a opção **Gestão de Guias** > **Emissão de Guia Rápida**.
 3. Seleciona a competência de apuração.
-4. Emite a **GFD com PIX** e efetua o download do PDF.
+4. Emite a **GFD** e efetua o download do PDF.
 5. Emite e baixa o **Relatório Analítico de Débitos**.
 6. Salva e renomeia os arquivos na pasta da competência.
 

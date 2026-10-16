@@ -40,3 +40,35 @@ def test_parse_relatorio_pdf_real():
     RelatorioFolhaParser.exportar_para_pdf(empresas, out_pdf)
     assert out_pdf.exists()
     assert out_pdf.stat().st_size > 0
+
+
+def test_carregar_regras_parametros():
+    regras = RelatorioFolhaParser.carregar_regras_parametros()
+    assert isinstance(regras, dict)
+    assert "fgts_mensal" in regras
+    assert "emp_cred_trab" in regras
+    assert "fgts_compl" in regras
+    assert "emp_cred_tr_resc" in regras
+    assert "simples_dom" in regras
+    assert regras["fgts_mensal"] is True
+    assert regras["emp_cred_trab"] is True
+
+
+def test_parse_com_regras_sem_consignado():
+    pdf_path = Path("data/relatorio_encargos_exemplo.pdf")
+    if not pdf_path.exists():
+        pytest.skip("Arquivo local de teste ignorado.")
+
+    regras = {
+        "fgts_mensal": True,
+        "emp_cred_trab": False,
+        "fgts_compl": True,
+        "emp_cred_tr_resc": False,
+        "simples_dom": False
+    }
+    empresas = RelatorioFolhaParser.parse_pdf(pdf_path, regras_encargos=regras)
+    empresa_a = next((e for e in empresas if "11444777000161" in e["documento_limpo"]), None)
+    assert empresa_a is not None
+    # Como emp_cred_trab está desativado nesta regra, total_fgts deve ser apenas fgts_mensal
+    assert empresa_a["total_fgts"] == 1500.00
+
