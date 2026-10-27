@@ -60,6 +60,9 @@ class FGTSDigitalApp(ctk.CTk):
         self.param_emp_cred_tr_resc_var = tk.BooleanVar(value=False)
         self.param_simples_dom_var = tk.BooleanVar(value=False)
 
+        # Emissão: exigir valor esperado da folha antes de emitir
+        self.exigir_valor_esperado_var = tk.BooleanVar(value=True)
+
         # Carrega parâmetros persistidos em config/parametros.json
         self._carregar_parametros()
 
@@ -544,6 +547,15 @@ class FGTSDigitalApp(ctk.CTk):
             command=self._atualizar_cards_kpi
         )
         self.sw_trava.pack(anchor="w", pady=3)
+
+        self.sw_exigir_valor = ctk.CTkSwitch(
+            switches_box,
+            text="Exigir valor esperado da folha para emitir a guia (Recomendado)",
+            variable=self.exigir_valor_esperado_var,
+            font=ctk.CTkFont(weight="bold"),
+            command=self._salvar_parametros_silencioso
+        )
+        self.sw_exigir_valor.pack(anchor="w", pady=3)
 
         self.sw_headless = ctk.CTkSwitch(
             switches_box,
@@ -1287,13 +1299,15 @@ class FGTSDigitalApp(ctk.CTk):
             pastas = dados.get("pastas", {})
             if "output_dir" in pastas:
                 self.output_dir_var.set(str(pastas["output_dir"]))
+
+            emissao = dados.get("emissao", {})
+            if "exigir_valor_esperado" in emissao:
+                self.exigir_valor_esperado_var.set(bool(emissao["exigir_valor_esperado"]))
         except Exception as e:
             logger.warning(f"Não foi possível carregar config/parametros.json: {e}")
 
-    def _salvar_parametros(self):
-        """Persiste os parâmetros em config/parametros.json e reaplica regras."""
-        cfg_path = Path("config/parametros.json")
-        dados = {
+    def _montar_dados_parametros(self) -> Dict[str, Any]:
+        return {
             "regras_leitura_pdf": {
                 "fgts_mensal": self.param_fgts_mensal_var.get(),
                 "emp_cred_trab": self.param_emp_cred_trab_var.get(),
@@ -1308,8 +1322,24 @@ class FGTSDigitalApp(ctk.CTk):
             },
             "pastas": {
                 "output_dir": self.output_dir_var.get().strip()
+            },
+            "emissao": {
+                "exigir_valor_esperado": self.exigir_valor_esperado_var.get()
             }
         }
+
+    def _salvar_parametros_silencioso(self):
+        """Persiste os parâmetros sem diálogos (usado pelos switches do painel)."""
+        try:
+            with open(Path("config/parametros.json"), "w", encoding="utf-8") as f:
+                json.dump(self._montar_dados_parametros(), f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            logger.warning(f"Não foi possível salvar config/parametros.json: {e}")
+
+    def _salvar_parametros(self):
+        """Persiste os parâmetros em config/parametros.json e reaplica regras."""
+        cfg_path = Path("config/parametros.json")
+        dados = self._montar_dados_parametros()
         try:
             cfg_path.parent.mkdir(parents=True, exist_ok=True)
             with open(cfg_path, "w", encoding="utf-8") as f:
@@ -1347,6 +1377,7 @@ class FGTSDigitalApp(ctk.CTk):
         self.nome_rel_fgts_var.set("RE FGTS - Competencia")
         self.nome_rel_cons_var.set("Consignado FGTS - Competencia")
         self.output_dir_var.set(str(settings.DEFAULT_OUTPUT_DIR))
+        self.exigir_valor_esperado_var.set(True)
         self._salvar_parametros()
 
     # -------------------------------------------------------------------------
@@ -1849,7 +1880,7 @@ class FGTSDigitalApp(ctk.CTk):
                         "cnpj_formatado": emp["cnpj_formatado"],
                         "razao_social": emp["razao_social"],
                         "competencia": emp.get("competencia") or competencia,
-                        "status": "Erro de Procuração",
+                        "status": troca.get("status", "Erro de Procuração"),
                         "valor_guia": 0.0,
                         "fgts_esperado": fgts_esp,
                         "diferenca": 0.0,
@@ -1867,7 +1898,8 @@ class FGTSDigitalApp(ctk.CTk):
                         fgts_esperado=fgts_esp,
                         bloquear_se_divergente=self.travar_divergencia_var.get(),
                         templates_nomes=templates_nomes,
-                        apenas_conferir=apenas_conferir
+                        apenas_conferir=apenas_conferir,
+                        exigir_valor_esperado=self.exigir_valor_esperado_var.get()
                     )
                     st_low = res["status"].lower()
                     if "iguais" in st_low or "conferido" in st_low:

@@ -6,6 +6,7 @@ emissão de guias GFD (com PIX) e download de relatórios de débitos.
 
 import os
 import shutil
+import hashlib
 import tempfile
 import glob
 from pathlib import Path
@@ -23,6 +24,7 @@ from src.modules.fgts_digital.parser import (
     formatar_nome_documento,
     extrair_valor_fgts_de_texto
 )
+from src.modules.fgts_digital.validacao_pdf import validar_pdf_documento
 from src.utils.logger import logger
 
 
@@ -32,6 +34,30 @@ class FGTSDigitalBot:
     def __init__(self, page: Page, output_base_dir: Path):
         self.page = page
         self.output_base_dir = Path(output_base_dir)
+        # Motivo da última reprovação de PDF (exibido nos detalhes do resultado)
+        self.ultima_rejeicao: str = ""
+
+    def _validar_ou_rejeitar(self, caminho: Path, validacao: Optional[Dict[str, Any]]) -> bool:
+        """
+        Confere o conteúdo do PDF salvo. Se reprovado, move para '_rejeitados' dentro da pasta
+        da empresa (nunca fica com o nome final) e registra o motivo.
+        """
+        if not validacao:
+            return True
+        ok, motivo = validar_pdf_documento(
+            caminho,
+            validacao["cnpj"],
+            validacao["competencia"],
+            valor_esperado=validacao.get("valor"),
+        )
+        if ok:
+            return True
+        destino = caminho.parent / "_rejeitados" / caminho.name
+        destino.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(caminho), str(destino))
+        self.ultima_rejeicao = f"{caminho.name}: {motivo}"
+        logger.error(f"PDF REPROVADO na validação ({motivo}). Arquivo movido para: {destino}")
+        return False
 
     def _clicar_primeiro_disponivel(self, seletores: List[str], timeout_ms: int = 5000) -> bool:
         """Tenta clicar no primeiro seletor que estiver visível na página."""
@@ -270,7 +296,10 @@ class FGTSDigitalBot:
 
             # 6. Clica em confirmar troca ('Selecionar' ou 'Definir')
             logger.info("Confirmando seleção de perfil...")
-            self._clicar_primeiro_disponivel(sel.PERFIL_BTN_CONFIRMAR_TROCA, timeout_ms=3000)
+            if not self._clicar_primeiro_disponivel(sel.PERFIL_BTN_CONFIRMAR_TROCA, timeout_ms=3000):
+                msg = "Botão de confirmação da troca de perfil não localizado"
+                logger.warning(f"{cnpj_fmt}: {msg}")
+                return {"sucesso": False, "status": "Perfil não confirmado", "motivo": msg}
             time.sleep(2.5)
 
             # 7. Verifica se houve erro de procuração ou bloqueio retornado no modal
@@ -294,12 +323,60 @@ class FGTSDigitalBot:
                     pass
                 return {"sucesso": False, "motivo": msg}
 
+            # 8. Só segue se a barra de perfil mostrar o CNPJ escolhido (evita emitir no perfil anterior)
+            if not self._confirmar_perfil_ativo(cnpj_limpo):
+                msg = "A barra de perfil não exibe o CNPJ selecionado após a troca"
+                logger.warning(f"{cnpj_fmt}: {msg}. Empresa ignorada por segurança.")
+                return {"sucesso": False, "status": "Perfil não confirmado", "motivo": msg}
+
             logger.info(f"Perfil alterado com sucesso para {cnpj_fmt}.")
             return {"sucesso": True}
 
         except Exception as e:
             logger.error(f"Erro ao trocar perfil para {cnpj_fmt}: {e}")
             return {"sucesso": False, "motivo": str(e)}
+
+    def _textos_indicador_perfil(self) -> List[str]:
+        """
+        Textos dos elementos que exibem o perfil ativo. Usa os seletores dedicados (ex.: span.dados-perfil);
+        só recorre à vizinhança do botão 'Trocar Perfil' se nenhum deles existir na tela.
+        """
+        textos = []
+        for s in sel.PERFIL_INDICADOR_ATIVO:
+            try:
+                for el in self.page.locator(s).all():
+                    if el.is_visible():
+                        textos.append(el.inner_text())
+            except Exception:
+                continue
+        if textos:
+            return textos
+        for s in sel.PERFIL_BTN_TROCAR:
+            try:
+                btn = self.page.locator(s).first
+                if btn.count() > 0 and btn.is_visible():
+                    for nivel in (1, 2, 3):
+                        textos.append(btn.locator(f"xpath=ancestor::*[{nivel}]").first.inner_text())
+                    break
+            except Exception:
+                continue
+        return textos
+
+    def _confirmar_perfil_ativo(self, cnpj_limpo: str, timeout_s: float = 8.0) -> bool:
+        """
+        Aguarda o modal de perfil fechar e a barra de perfil exibir o CNPJ (ou a raiz) escolhido.
+        O FGTS Digital identifica o empregador pela raiz do CNPJ, por isso a raiz é suficiente.
+        """
+        import re
+        raiz = cnpj_limpo[:8]
+        padrao = re.compile(rf"(?<![\d.]){raiz[:2]}\.?{raiz[2:5]}\.?{raiz[5:]}")
+        limite = time.time() + timeout_s
+        while time.time() < limite:
+            modal_aberto = self._elemento_visivel(sel.MODAL_PERFIL_CONTAINER, timeout_ms=300)
+            if not modal_aberto and any(padrao.search(t or "") for t in self._textos_indicador_perfil()):
+                return True
+            time.sleep(0.5)
+        return False
 
     def _obter_container_mensal(self, fgts_esperado: float = 0.0) -> Optional[Any]:
         """
@@ -513,7 +590,8 @@ class FGTSDigitalBot:
         secao_nome: str,
         caminho_destino: Path,
         indice_fallback: int = 0,
-        container_mensal: Optional[Any] = None
+        container_mensal: Optional[Any] = None,
+        validacao: Optional[Dict[str, Any]] = None
     ) -> bool:
         """
         Localiza e faz o download do relatório analítico em PDF da seção especificada ('FGTS' ou 'Consignado').
@@ -621,6 +699,8 @@ class FGTSDigitalBot:
                 btn_alvo.click()
             download = download_info.value
             download.save_as(str(caminho_destino))
+            if not self._validar_ou_rejeitar(caminho_destino, validacao):
+                return False
             logger.info(f"Relatório PDF ({secao_nome}) baixado com sucesso: {caminho_destino.name}")
             return True
         except Exception as e:
@@ -650,25 +730,30 @@ class FGTSDigitalBot:
             pass
         return False
 
-    def _recuperar_pdf_temp_recente(self, tempo_max_segundos: int = 120) -> Optional[Path]:
+    @staticmethod
+    def _hash_arquivo(caminho: Path) -> str:
+        with open(caminho, "rb") as f:
+            return hashlib.sha256(f.read()).hexdigest()
+
+    def _recuperar_pdf_temp_recente(self, desde: float, ignorar_hashes: set) -> Optional[Path]:
         """
-        Recupera o PDF mais recente gerado no diretório temporário do Playwright/Chrome.
-        Garante que o arquivo da guia seja copiado mesmo se o evento CDP do download não for disparado na página.
+        Recupera o PDF gerado no diretório temporário do Playwright/Chrome DEPOIS do clique em 'Emitir'.
+        Usado quando o evento CDP do download não é disparado. Ignora arquivos já salvos para a empresa
+        (ex.: relatórios analíticos) e o resultado ainda passa pela validação de conteúdo.
         """
         temp_dir = tempfile.gettempdir()
         padrao = os.path.join(temp_dir, "playwright-artifacts-*", "*")
         arquivos = glob.glob(padrao)
         candidatos = []
-        agora = time.time()
         for arq in arquivos:
             try:
                 mtime = os.path.getmtime(arq)
-                size = os.path.getsize(arq)
-                if (agora - mtime) <= tempo_max_segundos and size > 20000:
-                    with open(arq, "rb") as f:
-                        magic = f.read(5)
-                    if magic.startswith(b"%PDF"):
-                        candidatos.append((mtime, Path(arq)))
+                if mtime < desde:
+                    continue
+                with open(arq, "rb") as f:
+                    magic = f.read(5)
+                if magic.startswith(b"%PDF") and self._hash_arquivo(Path(arq)) not in ignorar_hashes:
+                    candidatos.append((mtime, Path(arq)))
             except Exception:
                 continue
         if candidatos:
@@ -676,14 +761,41 @@ class FGTSDigitalBot:
             return candidatos[0][1]
         return None
 
-    def _emitir_guia_gfd(self, caminho_guia: Path, container_mensal: Optional[Any] = None) -> bool:
+    def _aceitar_guia_salva(self, caminho_guia: Path, hashes_existentes: set, validacao: Optional[Dict[str, Any]]) -> bool:
+        """Rejeita a guia se for cópia de um PDF já salvo para a empresa ou se o conteúdo não conferir."""
+        if self._hash_arquivo(caminho_guia) in hashes_existentes:
+            destino = caminho_guia.parent / "_rejeitados" / caminho_guia.name
+            destino.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(caminho_guia), str(destino))
+            self.ultima_rejeicao = f"{caminho_guia.name}: arquivo idêntico a um relatório já salvo"
+            logger.error(f"PDF REPROVADO: a 'guia' baixada é cópia de um relatório já salvo. Movido para: {destino}")
+            return False
+        if not self._validar_ou_rejeitar(caminho_guia, validacao):
+            return False
+        logger.info(f"Guia GFD salva e validada com sucesso: {caminho_guia.name}")
+        return True
+
+    def _emitir_guia_gfd(
+        self,
+        caminho_guia: Path,
+        container_mensal: Optional[Any] = None,
+        validacao: Optional[Dict[str, Any]] = None
+    ) -> bool:
         """
-        Clica no botão 'Emitir guia' da Guia MENSAL e intercepta o download do arquivo PDF da GFD.
+        Clica no botão 'Emitir guia' DENTRO do card Mensal selecionado e intercepta o download da GFD.
         Trata o modal de confirmação 'Gerar guia - Confirma nova emissão?' e botões pós-emissão.
-        Conta com listener nativo de downloads e fallback para garantir a persistência na pasta.
+        Sem card Mensal identificado, não emite. Todo PDF salvo passa pela validação de conteúdo.
         """
         logger.info("Solicitando emissão da guia GFD Mensal...")
         caminho_guia.parent.mkdir(parents=True, exist_ok=True)
+
+        if container_mensal is None:
+            logger.warning("Card da Guia Mensal não identificado: emissão bloqueada por segurança.")
+            return False
+
+        # PDFs já salvos para a empresa (ex.: relatórios) não podem ser aceitos como guia
+        hashes_existentes = {self._hash_arquivo(p) for p in caminho_guia.parent.glob("*.pdf")}
+        inicio_emissao = time.time()
 
         downloads_capturados = []
 
@@ -703,43 +815,21 @@ class FGTSDigitalBot:
                 logger.info("Modal 'Gerar guia' já está aberto! Clicando em 'Confirmar'...")
                 btn_confirmar.click()
             else:
-                # 2. Localiza o botão 'Emitir guia' priorizando a Guia MENSAL
+                # 2. Localiza o botão 'Emitir guia' somente dentro do card Mensal selecionado
+                #    (botões fora do card podem pertencer a guias Rescisórias ou residuais)
                 btn_emitir = None
-
-                # 2a. Busca no container isolado da Guia Mensal
-                if container_mensal:
-                    try:
-                        for s in ["button:has-text('Emitir guia')", "button:has-text('Emitir Guia')", "button:has-text('Emitir')"]:
-                            loc = container_mensal.locator(s)
-                            if loc.count() > 0 and loc.first.is_visible():
-                                btn_emitir = loc.first
-                                logger.info("Botão 'Emitir guia' localizado diretamente no card Mensal.")
-                                break
-                    except Exception:
-                        pass
-
-                # 2b. Busca pelo botão que segue imediatamente o cabeçalho 'Mensal - Vencimento'
-                if not btn_emitir:
-                    try:
-                        loc_header_mensal = self.page.locator("text=/Mensal\\s*-\\s*Vencimento/i").first
-                        if loc_header_mensal.is_visible(timeout=1000):
-                            btn_apos = loc_header_mensal.locator("xpath=following::button[contains(., 'Emitir')][1]").first
-                            if btn_apos.is_visible(timeout=1500):
-                                btn_emitir = btn_apos
-                                logger.info("Botão 'Emitir guia' localizado imediatamente após o cabeçalho 'Mensal - Vencimento'.")
-                    except Exception:
-                        pass
-
-                # 2c. Fallback geral para qualquer botão 'Emitir guia' visível
-                if not btn_emitir:
-                    for s in sel.BTN_EMITIR_GUIA:
-                        loc = self.page.locator(s)
+                try:
+                    for s_btn in ["button:has-text('Emitir guia')", "button:has-text('Emitir Guia')", "button:has-text('Emitir')"]:
+                        loc = container_mensal.locator(s_btn)
                         if loc.count() > 0 and loc.first.is_visible():
                             btn_emitir = loc.first
+                            logger.info("Botão 'Emitir guia' localizado diretamente no card Mensal.")
                             break
+                except Exception:
+                    pass
 
                 if not btn_emitir:
-                    logger.warning("Botão 'Emitir guia' não localizado na tela.")
+                    logger.warning("Botão 'Emitir guia' não localizado dentro do card Mensal.")
                     return False
 
                 logger.info("Clicando no botão 'Emitir guia' da Guia Mensal...")
@@ -786,16 +876,15 @@ class FGTSDigitalBot:
             if downloads_capturados:
                 download_obj = downloads_capturados[-1]
                 download_obj.save_as(str(caminho_guia))
-                logger.info(f"Guia GFD salva com sucesso em: {caminho_guia.name}")
-                return True
+                return self._aceitar_guia_salva(caminho_guia, hashes_existentes, validacao)
 
-            # 6. Fallback: Recupera o arquivo gerado pelo Chrome na pasta temporária do Playwright
+            # 6. Fallback: PDF criado na pasta temporária do Playwright DEPOIS do clique em 'Emitir'
             logger.info("Verificando se o arquivo da guia foi salvo em diretório temporário...")
-            pdf_temp = self._recuperar_pdf_temp_recente(tempo_max_segundos=60)
+            pdf_temp = self._recuperar_pdf_temp_recente(desde=inicio_emissao, ignorar_hashes=hashes_existentes)
             if pdf_temp and pdf_temp.exists():
                 shutil.copy(str(pdf_temp), str(caminho_guia))
-                logger.info(f"Guia GFD recuperada e salva com sucesso via fallback: {caminho_guia.name} ({pdf_temp.stat().st_size} bytes)")
-                return True
+                logger.info(f"Guia GFD recuperada via pasta temporária ({pdf_temp.stat().st_size} bytes). Validando conteúdo...")
+                return self._aceitar_guia_salva(caminho_guia, hashes_existentes, validacao)
 
             logger.warning("Nenhum download de guia GFD foi concluído ou localizado.")
             return False
@@ -817,7 +906,8 @@ class FGTSDigitalBot:
         fgts_esperado: float = 0.0,
         bloquear_se_divergente: bool = True,
         templates_nomes: Optional[Dict[str, str]] = None,
-        apenas_conferir: bool = False
+        apenas_conferir: bool = False,
+        exigir_valor_esperado: bool = True
     ) -> Dict[str, Any]:
         """
         Navega para a Gestão de Guias -> Emissão de Guia Rápida,
@@ -825,9 +915,13 @@ class FGTSDigitalBot:
         valida o valor apurado contra o valor da folha (se fornecido),
         baixa os relatórios analíticos em PDF (FGTS e Consignado)
         e emite a Guia Rápida (GFD) com nomenclatura personalizável.
+        Na dúvida não emite: sem valor esperado (se exigido), sem card Mensal
+        identificado ou com PDF reprovado na validação de conteúdo.
         """
         cnpj_limpo = limpar_cnpj(cnpj)
         cnpj_fmt = formatar_cnpj(cnpj_limpo)
+        self.ultima_rejeicao = ""
+        validacao_rel = {"cnpj": cnpj_limpo, "competencia": competencia}
         comp_pasta = competencia.replace("/", "-")
         razao_sanitizada = sanitizar_nome_arquivo(razao_social)[:40]
 
@@ -944,6 +1038,28 @@ class FGTSDigitalBot:
                 time.sleep(1.0)
                 return resultado
 
+            # 5b. Travas de segurança antes de qualquer emissão
+            if fgts_esperado <= 0 and exigir_valor_esperado:
+                msg = (
+                    f"Sem valor esperado (folha/relatório) para conferir o FGTS Digital (R$ {valor_tela:.2f}). "
+                    f"Guia não emitida. Informe o valor na planilha ou desative a exigência em Parâmetros."
+                )
+                logger.warning(f"{cnpj_fmt}: {msg}")
+                resultado["status"] = "Sem Valor de Referência (Não Emitida)"
+                resultado["detalhes"] = msg
+                self.page.goto("https://fgtsdigital.sistema.gov.br/portal/servicos", wait_until="domcontentloaded")
+                time.sleep(1.0)
+                return resultado
+
+            if container_mensal is None:
+                msg = "Card da Guia Mensal não identificado na tela. Guia não emitida por segurança."
+                logger.warning(f"{cnpj_fmt}: {msg}")
+                resultado["status"] = "Card Mensal Não Identificado (Não Emitida)"
+                resultado["detalhes"] = msg
+                self.page.goto("https://fgtsdigital.sistema.gov.br/portal/servicos", wait_until="domcontentloaded")
+                time.sleep(1.0)
+                return resultado
+
             # 6. Auditoria de Divergência contra Folha (Emissão Normal)
             if fgts_esperado > 0:
                 diferenca = valor_tela - fgts_esperado
@@ -963,7 +1079,7 @@ class FGTSDigitalBot:
                     # Baixa os relatórios analíticos em PDF para auditoria contábil
                     arquivos_audit = []
                     caminho_rel_fgts_div = pasta_empresa / f"Divergencia_{nome_rel_fgts}"
-                    if self._baixar_relatorio_pdf("FGTS", caminho_rel_fgts_div, indice_fallback=0, container_mensal=container_mensal):
+                    if self._baixar_relatorio_pdf("FGTS", caminho_rel_fgts_div, indice_fallback=0, container_mensal=container_mensal, validacao=validacao_rel):
                         arquivos_audit.append(caminho_rel_fgts_div.name)
 
                     try:
@@ -975,7 +1091,7 @@ class FGTSDigitalBot:
 
                         if tem_consignado:
                             caminho_rel_cons_div = pasta_empresa / f"Divergencia_{nome_rel_cons}"
-                            if self._baixar_relatorio_pdf("Consignado", caminho_rel_cons_div, indice_fallback=1, container_mensal=container_mensal):
+                            if self._baixar_relatorio_pdf("Consignado", caminho_rel_cons_div, indice_fallback=1, container_mensal=container_mensal, validacao=validacao_rel):
                                 arquivos_audit.append(caminho_rel_cons_div.name)
                     except Exception:
                         pass
@@ -990,7 +1106,7 @@ class FGTSDigitalBot:
             # 6. Download dos Relatórios Analíticos em PDF (FGTS e Consignado)
             arquivos_baixados = []
             caminho_rel_fgts = pasta_empresa / nome_rel_fgts
-            if self._baixar_relatorio_pdf("FGTS", caminho_rel_fgts, indice_fallback=0, container_mensal=container_mensal):
+            if self._baixar_relatorio_pdf("FGTS", caminho_rel_fgts, indice_fallback=0, container_mensal=container_mensal, validacao=validacao_rel):
                 arquivos_baixados.append(caminho_rel_fgts.name)
 
             try:
@@ -1002,7 +1118,7 @@ class FGTSDigitalBot:
 
                 if tem_consignado:
                     caminho_rel_cons = pasta_empresa / nome_rel_cons
-                    if self._baixar_relatorio_pdf("Consignado", caminho_rel_cons, indice_fallback=1, container_mensal=container_mensal):
+                    if self._baixar_relatorio_pdf("Consignado", caminho_rel_cons, indice_fallback=1, container_mensal=container_mensal, validacao=validacao_rel):
                         arquivos_baixados.append(caminho_rel_cons.name)
             except Exception as e:
                 logger.warning(f"{cnpj_fmt}: Falha ao verificar/baixar relatório consignado: {e}")
@@ -1010,13 +1126,32 @@ class FGTSDigitalBot:
             if arquivos_baixados:
                 resultado["arquivo_relatorio"] = ", ".join(arquivos_baixados)
 
+            # 6b. Relatório reprovado na validação indica perfil/empresa errados: não emite a guia
+            if self.ultima_rejeicao:
+                resultado["status"] = "Falha na Validação do PDF (Relatório) - Guia Não Emitida"
+                resultado["detalhes"] = (
+                    f"Relatório baixado não confere com a empresa/competência ({self.ultima_rejeicao}). "
+                    f"Guia não emitida por segurança; arquivo em '_rejeitados'."
+                )
+                logger.error(f"{cnpj_fmt}: {resultado['detalhes']}")
+                self.page.goto("https://fgtsdigital.sistema.gov.br/portal/servicos", wait_until="domcontentloaded")
+                time.sleep(1.0)
+                return resultado
+
             # 7. Emissão da Guia (GFD)
             caminho_guia = pasta_empresa / nome_guia
-            sucesso_guia = self._emitir_guia_gfd(caminho_guia, container_mensal=container_mensal)
+            validacao_guia = {**validacao_rel, "valor": valor_tela}
+            sucesso_guia = self._emitir_guia_gfd(caminho_guia, container_mensal=container_mensal, validacao=validacao_guia)
             if sucesso_guia:
                 resultado["status"] = "Sucesso - Guia Emitida"
                 resultado["arquivo_guia"] = caminho_guia.name
-                resultado["detalhes"] = f"Guia GFD gerada e salva com sucesso (Valor: R$ {valor_tela:.2f})."
+                resultado["detalhes"] = f"Guia GFD gerada, salva e validada (Valor: R$ {valor_tela:.2f})."
+            elif self.ultima_rejeicao:
+                resultado["status"] = "Falha na Validação do PDF (Guia)"
+                resultado["detalhes"] = (
+                    f"A guia foi solicitada no portal, mas o PDF baixado não confere ({self.ultima_rejeicao}). "
+                    f"Arquivo movido para '_rejeitados'. Conferir manualmente no FGTS Digital."
+                )
             else:
                 if arquivos_baixados:
                     resultado["status"] = "Relatórios Baixados (Guia Pendente)"
@@ -1046,7 +1181,8 @@ class FGTSDigitalBot:
         competencia: str,
         callback_progresso: Optional[Any] = None,
         bloquear_se_divergente: bool = True,
-        apenas_conferir: bool = False
+        apenas_conferir: bool = False,
+        exigir_valor_esperado: bool = True
     ) -> List[Dict[str, Any]]:
         """
         Itera sobre a lista de empresas, alternando perfis e emitindo as guias (ou apenas conferindo valores).
@@ -1073,7 +1209,7 @@ class FGTSDigitalBot:
                     "cnpj_formatado": emp["cnpj_formatado"],
                     "razao_social": razao,
                     "competencia": comp_empresa,
-                    "status": "Erro de Procuração",
+                    "status": troca.get("status", "Erro de Procuração"),
                     "valor_guia": 0.0,
                     "fgts_esperado": fgts_esperado,
                     "diferenca": 0.0,
@@ -1090,7 +1226,8 @@ class FGTSDigitalBot:
                     comp_empresa,
                     fgts_esperado=fgts_esperado,
                     bloquear_se_divergente=bloquear_se_divergente,
-                    apenas_conferir=apenas_conferir
+                    apenas_conferir=apenas_conferir,
+                    exigir_valor_esperado=exigir_valor_esperado
                 )
 
             resultados.append(res)

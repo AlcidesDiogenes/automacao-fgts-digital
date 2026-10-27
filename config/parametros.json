@@ -13,5 +13,8 @@
   },
   "pastas": {
     "output_dir": "data/output"
+  },
+  "emissao": {
+    "exigir_valor_esperado": true
   }
 }

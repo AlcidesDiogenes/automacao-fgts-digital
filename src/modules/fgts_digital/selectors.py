@@ -99,6 +99,17 @@ PERFIL_INPUT_CNPJ_OUTORGANTE = [
     "input[placeholder*='CNPJ']"
 ]
 
+# Barra que exibe o perfil ativo após a troca (usada para confirmar o CNPJ selecionado).
+# Confirmado no portal real em 27/10/2026: <span class="dados-perfil"> Empregador: 11.444.777/0001-61 | RAZÃO </span>
+# (ao lado de <span class="dados-usuario"> Usuário (Procurador): CPF | NOME </span> e do botão 'Trocar Perfil').
+PERFIL_INDICADOR_ATIVO = [
+    "span.dados-perfil",
+    "lib-fgtsd-barra-perfil",
+    ".barra-perfil",
+    "#perfil-usuario",
+    ".perfil-usuario"
+]
+
 PERFIL_BTN_CONFIRMAR_TROCA = [
     ".modal-buttons button.primary",
     "button.br-button.primary:has-text('Selecionar')",

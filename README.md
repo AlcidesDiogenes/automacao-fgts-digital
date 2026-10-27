@@ -163,6 +163,24 @@ Para cada empresa da lista:
 5. Emite e baixa o **Relatório Analítico de Débitos** (FGTS e Consignado).
 6. Salva e renomeia os arquivos na pasta da competência.
 
+### 🛡️ Travas de Segurança da Emissão (v2.1)
+O robô segue a regra **"na dúvida, não emite"**. Cada empresa só tem guia emitida se passar por todas as travas:
+
+| Trava | O que verifica | Status quando bloqueia |
+| :--- | :--- | :--- |
+| **Confirmação de perfil** | Após a troca por procuração, o modal fecha e a barra de perfil exibe a raiz do CNPJ escolhido. | `Perfil não confirmado` |
+| **Valor de referência** | Existe valor esperado (folha/relatório) para conferir. Pode ser desligado no painel em *"Exigir valor esperado da folha para emitir a guia"*. | `Sem Valor de Referência (Não Emitida)` |
+| **Card Mensal** | O botão *Emitir guia* clicado está dentro do card Mensal selecionado — nunca em card Rescisório ou residual. | `Card Mensal Não Identificado (Não Emitida)` |
+| **Divergência** | Diferença entre portal e folha até R$ 0,02. | `Divergência de Valores (Não Emitida)` |
+| **Conteúdo dos relatórios** | Cada relatório baixado contém a raiz do CNPJ e a competência. Se reprovar, a guia não é emitida. | `Falha na Validação do PDF (Relatório) - Guia Não Emitida` |
+| **Conteúdo da guia** | A GFD baixada contém raiz do CNPJ, competência e valor do card, e não é cópia de um relatório já salvo. | `Falha na Validação do PDF (Guia)` |
+
+PDFs reprovados nunca ficam com o nome final: são movidos para a subpasta `_rejeitados/` da empresa. No caso de `Falha na Validação do PDF (Guia)`, a guia **foi solicitada no portal** — confira manualmente no FGTS Digital.
+
+> ✅ **Confirmação de perfil validada no portal real (27/10/2026):** o portal exibe `Empregador: 11.444.777/0001-61 | RAZÃO SOCIAL` em `span.dados-perfil`; a trava confirmou corretamente a troca para 3 empresas.
+>
+> ⚠️ **Validação pendente no portal real:** o formato do texto dos PDFs reais (GFD e relatórios analíticos) ainda precisa ser confirmado numa emissão real. Até lá, se os PDFs vierem em outro formato, as travas reprovam o arquivo em vez de arriscar.
+
 ### 2. Modo "Apenas Conferir" (Auditoria de Folha)
 Ativado marcando a opção **"Apenas conferir se o valor do relatório e do sistema está igual"**:
 1. O robô acessa o FGTS Digital e localiza a apuração da competência.
@@ -282,7 +300,8 @@ automacao-fgts-digital/
 │   │   ├── fgts_digital/       # Robô de automação do portal federal
 │   │   │   ├── bot.py          # Lógica de navegação, troca de perfil e download
 │   │   │   ├── parser.py       # Extração e normalização de débitos
-│   │   │   └── selectors.py    # Mapeamento de seletores CSS e XPath
+│   │   │   ├── selectors.py    # Mapeamento de seletores CSS e XPath
+│   │   │   └── validacao_pdf.py # Conferência do conteúdo dos PDFs baixados (CNPJ, competência, valor)
 │   │   └── folha_relatorio/    # Leitor de relatórios do Sistema Domínio
 │   │       └── parser_pdf.py   # Parsing de PDFs e rubricas de encargos
 │   └── ui/                     # Interface Gráfica CustomTkinter
@@ -300,11 +319,15 @@ automacao-fgts-digital/
 
 ## 🧪 Testes Automatizados
 
-O projeto conta com testes unitários cobrindo o gerenciamento de certificados, validação de planilhas Excel, parsing de relatórios de encargos e estabilidade da interface:
+O projeto conta com testes unitários cobrindo o gerenciamento de certificados, validação de planilhas Excel, parsing de relatórios de encargos e as travas de segurança da emissão:
 
 ```powershell
 .\venv\Scripts\python.exe -m pytest -v
 ```
+
+- `tests/test_bot_seguranca.py` roda o robô contra um **portal FGTS Digital falso** (HTML servido pelo próprio Playwright por interceptação de rotas — nenhuma requisição sai para a internet). Requer o Chromium do Playwright (`playwright install chromium`).
+- `tests/test_validacao_pdf.py` gera PDFs sintéticos com `reportlab` e testa a validação de conteúdo.
+- `tests/test_pendencias_fase2.py` contém falhas já confirmadas e ainda não corrigidas, marcadas como `xfail(strict=True)`.
 
 ---
 
