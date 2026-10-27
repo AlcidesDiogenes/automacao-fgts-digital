@@ -1,10 +1,14 @@
-# 🏛️ Automação FGTS Digital Pro v2.0
+<p align="center">
+  <img src="docs/assets/banner.png" alt="Automação FGTS Digital Pro" width="100%">
+</p>
 
-![Python Version](https://img.shields.io/badge/python-3.10%2B-blue.svg)
-![Playwright](https://img.shields.io/badge/playwright-chromium-green.svg)
-![CustomTkinter](https://img.shields.io/badge/GUI-CustomTkinter-blueviolet.svg)
-![Status](https://img.shields.io/badge/status-active-success.svg)
-![License](https://img.shields.io/badge/license-MIT-lightgrey.svg)
+<p align="center">
+  <img src="https://img.shields.io/badge/python-3.10%2B-blue.svg" alt="Python Version">
+  <img src="https://img.shields.io/badge/playwright-chromium-green.svg" alt="Playwright">
+  <img src="https://img.shields.io/badge/GUI-CustomTkinter-blueviolet.svg" alt="CustomTkinter">
+  <img src="https://img.shields.io/badge/status-active-success.svg" alt="Status">
+  <img src="https://img.shields.io/badge/license-MIT-lightgrey.svg" alt="License">
+</p>
 
 Sistema corporativo de alto desempenho desenvolvido para escritórios de contabilidade e departamentos fiscais/DP. Automatiza o acesso ao portal **FGTS Digital**, gerencia procurações eletrônicas (**SPE**), audita valores de encargos e emite em lote as **Guias do FGTS Digital (GFD)** e seus respectivos **Relatórios Analíticos de Débitos**.
 
@@ -13,9 +17,11 @@ Sistema corporativo de alto desempenho desenvolvido para escritórios de contabi
 ## 📑 Sumário
 
 - [Visão Geral](#-visão-geral)
+- [Demonstração do Fluxo em Ação](#-demonstração-do-fluxo-em-ação)
 - [Principais Funcionalidades](#-principais-funcionalidades)
-- [Arquitetura e Tecnologias](#-arquitetura-e-tecnologias)
 - [Interface Gráfica (UI v2.0 Pro)](#-interface-gráfica-ui-v20-pro)
+- [Inteligência de Reconhecimento Multi-Cards](#-inteligência-de-reconhecimento-multi-cards)
+- [Arquitetura e Tecnologias](#-arquitetura-e-tecnologias)
 - [Modos de Operação](#-modos-de-operação)
   - [1. Emissão de Guias e Relatórios (Padrão)](#1-emissão-de-guias-e-relatórios-padrão)
   - [2. Modo "Apenas Conferir" (Auditoria de Folha)](#2-modo-apenas-conferir-auditoria-de-folha)
@@ -36,10 +42,25 @@ O fechamento mensal de encargos trabalhistas exige a apuração e geração de g
 A **Automação FGTS Digital Pro** elimina o trabalho manual repetitivo:
 1. Conecta-se com o Certificado Digital do contador (instalado no Windows ou via arquivo `.pfx`).
 2. Lê a lista de empresas outorgantes (via planilha Excel ou diretamente do relatório em PDF do Sistema Domínio).
-3. Efetua a troca de perfil para cada cliente no portal.
+3. Efetua a troca de perfil para cada cliente no portal via Procuração Eletrônica (SPE).
 4. Audita se o valor no FGTS Digital bate com o relatório de encargos (com suporte consolidado a FGTS Mensal e FGTS de empréstimo consignado).
 5. Emite as guias GFD em PDF e baixa os relatórios detalhados de débitos.
 6. Organiza tudo em pastas por competência e gera uma planilha consolidada com o status de cada empresa.
+
+---
+
+## 🎬 Demonstração do Fluxo em Ação
+
+<p align="center">
+  <img src="docs/assets/demo.gif" alt="Demonstração do Fluxo de Automação" width="90%">
+</p>
+
+O GIF acima ilustra as cinco etapas executadas de forma contínua pelo robô:
+1. **Importação e Leitura**: Extração precisa de CNPJs, Razões Sociais e encargos do Sistema Domínio.
+2. **Conexão mTLS**: Handshake seguro com o Gov.br utilizando o repositório de certificados nativo do Windows.
+3. **Troca de Perfil SPE**: Acesso automatizado à procuração de cada cliente.
+4. **Seleção Inteligente**: Reconhecimento do card da guia correta mesmo quando há débitos residuais ou retificadoras.
+5. **Emissão e Auditoria**: Download da GFD, relatórios analíticos em PDF e planilha Excel consolidada.
 
 ---
 
@@ -65,19 +86,11 @@ A **Automação FGTS Digital Pro** elimina o trabalho manual repetitivo:
 
 ---
 
-## 🛠️ Arquitetura e Tecnologias
-
-- **Linguagem**: Python 3.10+
-- **Automação Web / Navegador**: [Playwright](https://playwright.dev/python/) com Chromium controlado por DevTools Protocol (CDP).
-- **Interface Gráfica**: [CustomTkinter](https://customtkinter.tomschimansky.com/) com design system dark/light contemporâneo.
-- **Processamento de Dados**: `pandas`, `openpyxl`.
-- **Extração de Documentos**: `pypdf`, `pdfplumber` e expressões regulares especializadas em layouts contábeis.
-- **Criptografia e Certificados**: `cryptography` (OpenSSL backend para parsing PKCS#12 e X.509).
-- **Testes**: `pytest` com 100% dos testes unitários e de integração locais passando.
-
----
-
 ## 🖥️ Interface Gráfica (UI v2.0 Pro)
+
+<p align="center">
+  <img src="docs/assets/ui_overview.png" alt="Visão Geral da Interface" width="95%">
+</p>
 
 A interface foi projetada seguindo diretrizes rígidas de ergonomia e confiabilidade visual, com arquitetura baseada em **Sidebar Lateral de Navegação** e **Paineis Temáticos**:
 
@@ -96,6 +109,49 @@ A interface foi projetada seguindo diretrizes rígidas de ergonomia e confiabili
 
 ---
 
+## 🧠 Inteligência de Reconhecimento Multi-Cards
+
+Em cenários reais do portal FGTS Digital, uma mesma competência pode apresentar **mais de um card de Guia Mensal** (por exemplo, quando há um débito residual de competência retificada e a guia principal da folha regular com empréstimo consignado):
+
+<p align="center">
+  <img src="docs/assets/portal_multicards.png" alt="Reconhecimento Multi-Cards no FGTS Digital" width="95%">
+</p>
+
+### Como o Robô Seleciona o Card Correto:
+1. **Identificação dos Blocos**: O robô faz a varredura de todos os containers contendo o cabeçalho `Mensal - Vencimento`.
+2. **Cálculo Consolidado**: Para cada card, soma as tabelas internas de **FGTS** e **Consignado**.
+3. **Cruzamento de Precisão**: Compara o `Total Guia` de cada card com o valor apurado na folha do Sistema Domínio (`fgts_esperado`).
+4. **Descarte de Falsas Divergências**: Ignora guias residuais ou retificadoras (ex: R$ 23,45) e foca exclusivamente no card de valor idêntico (ex: R$ 12.345,67), garantindo emissão correta sem falsos alertas.
+5. **Independência de Vencimento**: A seleção independe de a data ser dia 20 ou antecipada por finais de semana e feriados.
+
+---
+
+## 🛠️ Arquitetura e Tecnologias
+
+```mermaid
+flowchart TD
+    A["📑 Relatório em PDF (Sistema Domínio)"] --> B["⚙️ Parser Especializado (FGTS + Consignado)"]
+    B --> C["📋 Fila Consolidada de Empresas"]
+    C --> D["🔒 Conexão Segura Gov.br (mTLS Windows/PFX)"]
+    D --> E["👥 Troca de Perfil Automática (SPE)"]
+    E --> F{"🧠 Análise de Cards Mensais no Portal"}
+    F -->|"Divergente / Residual (ex: R$ 23,45)"| G["❌ Descartado"]
+    F -->|"Exato com a Folha (ex: R$ 12.345,67)"| H["✅ Card Selecionado"]
+    H --> I["📄 Download Relatórios Analíticos (FGTS e Consignado)"]
+    I --> J["⚡ Emissão Guia GFD (PDF)"]
+    J --> K["📊 Auditoria Final & Planilha Excel"]
+```
+
+- **Linguagem**: Python 3.10+
+- **Automação Web / Navegador**: [Playwright](https://playwright.dev/python/) com Chromium controlado por DevTools Protocol (CDP).
+- **Interface Gráfica**: [CustomTkinter](https://customtkinter.tomschimansky.com/) com design system dark/light contemporâneo.
+- **Processamento de Dados**: `pandas`, `openpyxl`.
+- **Extração de Documentos**: `pypdf`, `pdfplumber` e expressões regulares especializadas no layout do Sistema Domínio.
+- **Criptografia e Certificados**: `cryptography` (OpenSSL backend para parsing PKCS#12 e X.509).
+- **Testes**: `pytest` com suíte completa de testes unitários e de integração locais.
+
+---
+
 ## 🎯 Modos de Operação
 
 ### 1. Emissão de Guias e Relatórios (Padrão)
@@ -104,13 +160,13 @@ Para cada empresa da lista:
 2. Acessa a opção **Gestão de Guias** > **Emissão de Guia Rápida**.
 3. Seleciona a competência de apuração.
 4. Emite a **GFD** e efetua o download do PDF.
-5. Emite e baixa o **Relatório Analítico de Débitos**.
+5. Emite e baixa o **Relatório Analítico de Débitos** (FGTS e Consignado).
 6. Salva e renomeia os arquivos na pasta da competência.
 
 ### 2. Modo "Apenas Conferir" (Auditoria de Folha)
 Ativado marcando a opção **"Apenas conferir se o valor do relatório e do sistema está igual"**:
 1. O robô acessa o FGTS Digital e localiza a apuração da competência.
-2. Captura o valor total de débitos exibido pelo sistema federal.
+2. Captura o valor total de débitos apurados no portal.
 3. Cruza com o valor extraído da folha de pagamento do cliente.
 4. Se houver divergência, registra o valor da diferença no relatório e sinaliza no log.
 5. **Nenhuma guia é emitida**, preservando o status da declaração para conferência prévia.
@@ -185,7 +241,7 @@ Você também pode disparar a automação diretamente por linha de comando:
 
 ## 📝 Personalização de Nomenclatura
 
-Na tela da aplicação, é possível definir a estrutura do nome dos arquivos gerados:
+Na tela de **Parâmetros**, é possível definir a estrutura do nome dos arquivos gerados:
 
 * **Guia FGTS**:
   - Padrão: `FGTS - {competencia}`
@@ -208,21 +264,30 @@ automacao-fgts-digital/
 ├── .agents/                    # Diretrizes e regras de arquitetura e UI
 ├── config/
 │   ├── .env.example            # Modelo de configuração de variáveis
+│   ├── parametros.json         # Persistência de preferências e regras
 │   └── settings.py             # Gerenciador central de configurações
 ├── data/
 │   ├── logs/                   # Logs de execução (ignorado no git)
 │   └── output/                 # Pastas de saída com PDFs e planilhas geradas
+├── docs/
+│   └── assets/                 # Imagens, diagramas e GIFs do README
+├── scripts/
+│   └── generate_assets.py      # Gerador automatizado de assets visuais
 ├── src/
 │   ├── core/                   # Módulos de apoio (Excel, certificados, navegação)
 │   │   ├── cert_manager.py     # Leitor e validador X.509 / PKCS#12
 │   │   ├── excel_manager.py    # Geração e leitura de planilhas de lote
 │   │   └── report_parser.py   # Parser de relatórios de folha e consignado
 │   ├── modules/
-│   │   └── fgts_digital/       # Robô de automação do portal federal
-│   │       ├── bot.py          # Lógica de navegação, troca de perfil e download
-│   │       └── selectors.py    # Mapeamento de seletores CSS e XPath
+│   │   ├── fgts_digital/       # Robô de automação do portal federal
+│   │   │   ├── bot.py          # Lógica de navegação, troca de perfil e download
+│   │   │   ├── parser.py       # Extração e normalização de débitos
+│   │   │   └── selectors.py    # Mapeamento de seletores CSS e XPath
+│   │   └── folha_relatorio/    # Leitor de relatórios do Sistema Domínio
+│   │       └── parser_pdf.py   # Parsing de PDFs e rubricas de encargos
 │   └── ui/                     # Interface Gráfica CustomTkinter
-│       └── app.py              # Janela principal com responsividade e KPIs
+│       ├── app.py              # Janela principal com responsividade e KPIs
+│       └── theme.py            # Design tokens, cores e fontes
 ├── tests/                      # Suíte de testes automatizados (pytest)
 ├── iniciar.bat                 # Script de inicialização rápida
 ├── main.py                     # Entrypoint da aplicação (GUI & CLI)
