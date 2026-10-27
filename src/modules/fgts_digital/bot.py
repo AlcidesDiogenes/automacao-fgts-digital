@@ -12,7 +12,8 @@ import glob
 from pathlib import Path
 from datetime import datetime
 import time
-from typing import Dict, Any, List, Optional
+import threading
+from typing import Dict, Any, List, Optional, Callable
 from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError
 
 from src.modules.fgts_digital import selectors as sel
@@ -26,6 +27,7 @@ from src.modules.fgts_digital.parser import (
 )
 from src.modules.fgts_digital.validacao_pdf import validar_pdf_documento
 from src.utils.logger import logger
+from config import settings
 
 
 class FGTSDigitalBot:
@@ -59,27 +61,49 @@ class FGTSDigitalBot:
         logger.error(f"PDF REPROVADO na validação ({motivo}). Arquivo movido para: {destino}")
         return False
 
+    # Observação: locator.is_visible(timeout=...) do Playwright IGNORA o timeout (não espera).
+    # Os helpers abaixo fazem a espera de verdade, verificando todos os seletores a cada 250 ms
+    # até o prazo. timeout_ms=0 significa "verificar só agora" (usado quando a página já foi
+    # aguardada antes e a ausência do elemento é o caso normal, para não atrasar cada empresa).
+
+    def _primeiro_visivel(self, seletores: List[str], timeout_ms: int) -> Optional[Any]:
+        """Retorna o primeiro locator visível entre os seletores, aguardando até timeout_ms."""
+        limite = time.time() + timeout_ms / 1000
+        while True:
+            for s in seletores:
+                try:
+                    el = self.page.locator(s).first
+                    if el.is_visible():
+                        return el
+                except Exception:
+                    continue
+            if time.time() >= limite:
+                return None
+            time.sleep(0.25)
+
     def _clicar_primeiro_disponivel(self, seletores: List[str], timeout_ms: int = 5000) -> bool:
-        """Tenta clicar no primeiro seletor que estiver visível na página."""
-        for s in seletores:
-            try:
-                el = self.page.locator(s).first
-                if el.is_visible(timeout=timeout_ms):
-                    el.click()
-                    return True
-            except Exception:
-                continue
-        return False
+        """Clica no primeiro seletor que ficar visível em até timeout_ms."""
+        el = self._primeiro_visivel(seletores, timeout_ms)
+        if el is None:
+            return False
+        try:
+            el.click()
+            return True
+        except Exception:
+            return False
 
     def _elemento_visivel(self, seletores: List[str], timeout_ms: int = 3000) -> bool:
-        """Verifica se algum dos seletores fornecidos está visível na tela."""
-        for s in seletores:
-            try:
-                if self.page.locator(s).first.is_visible(timeout=timeout_ms):
-                    return True
-            except Exception:
-                continue
-        return False
+        """Verifica se algum dos seletores fica visível em até timeout_ms."""
+        return self._primeiro_visivel(seletores, timeout_ms) is not None
+
+    @staticmethod
+    def _aguardar_visivel(locator: Any, timeout_ms: int) -> bool:
+        """Aguarda um locator específico ficar visível (sem lançar exceção)."""
+        try:
+            locator.wait_for(state="visible", timeout=timeout_ms)
+            return True
+        except Exception:
+            return False
 
     def login(self) -> bool:
         """
@@ -119,7 +143,7 @@ class FGTSDigitalBot:
             for s_login in sel.LOGIN_BTN_GOV_BR:
                 try:
                     btn = self.page.locator(s_login).first
-                    if btn.is_visible(timeout=3000):
+                    if btn.is_visible():
                         btn.click()
                         clicou_login = True
                         logger.info(f"Clicou em 'Entrar com gov.br' via: {s_login}")
@@ -130,7 +154,7 @@ class FGTSDigitalBot:
             if not clicou_login:
                 try:
                     btn_text = self.page.get_by_text("gov.br", exact=False).first
-                    if btn_text.is_visible(timeout=4000):
+                    if btn_text.is_visible():
                         btn_text.click()
                         clicou_login = True
                         logger.info("Clicou em 'Entrar com gov.br' via busca textual.")
@@ -157,7 +181,7 @@ class FGTSDigitalBot:
             for s_cert in sel.LOGIN_BTN_CERTIFICADO:
                 try:
                     btn_c = self.page.locator(s_cert).first
-                    if btn_c.is_visible(timeout=3000):
+                    if btn_c.is_visible():
                         btn_c.click()
                         clicou_cert = True
                         logger.info(f"Clicou em certificado via: {s_cert}")
@@ -168,7 +192,7 @@ class FGTSDigitalBot:
             if not clicou_cert:
                 try:
                     btn_cert_txt = self.page.get_by_text("certificado digital", exact=False).first
-                    if btn_cert_txt.is_visible(timeout=5000):
+                    if btn_cert_txt.is_visible():
                         btn_cert_txt.click()
                         clicou_cert = True
                         logger.info("Clicou em certificado via busca textual.")
@@ -212,7 +236,7 @@ class FGTSDigitalBot:
                 time.sleep(1.0)
 
             if not retornou:
-                pasta_log = Path("data/logs")
+                pasta_log = settings.LOGS_DIR
                 pasta_log.mkdir(parents=True, exist_ok=True)
                 foto_erro = pasta_log / "erro_login_timeout.png"
                 self.page.screenshot(path=str(foto_erro))
@@ -253,10 +277,10 @@ class FGTSDigitalBot:
                 time.sleep(1.0)
 
             # 2. Fecha eventuais avisos de cookies
-            self._clicar_primeiro_disponivel(sel.BTN_ACEITAR_COOKIES, timeout_ms=800)
+            self._clicar_primeiro_disponivel(sel.BTN_ACEITAR_COOKIES, timeout_ms=0)
 
             # 3. Verifica se o modal já está visível; se não, clica em 'Trocar Perfil'
-            modal_aberto = self._elemento_visivel(sel.MODAL_PERFIL_CONTAINER, timeout_ms=1200)
+            modal_aberto = self._elemento_visivel(sel.MODAL_PERFIL_CONTAINER, timeout_ms=0)
             if not modal_aberto:
                 logger.info("Abrindo modal de troca de perfil...")
                 if not self._clicar_primeiro_disponivel(sel.PERFIL_BTN_TROCAR, timeout_ms=3000):
@@ -278,7 +302,7 @@ class FGTSDigitalBot:
             for s in sel.PERFIL_INPUT_CNPJ_OUTORGANTE:
                 try:
                     campo = self.page.locator(s).first
-                    if campo.is_visible(timeout=2000):
+                    if campo.is_visible():
                         campo.fill("")
                         campo.fill(cnpj_limpo)
                         input_preenchido = True
@@ -303,7 +327,7 @@ class FGTSDigitalBot:
             time.sleep(2.5)
 
             # 7. Verifica se houve erro de procuração ou bloqueio retornado no modal
-            if self._elemento_visivel(sel.ALERTA_PROCURACAO_INVALIDA, timeout_ms=1500):
+            if self._elemento_visivel(sel.ALERTA_PROCURACAO_INVALIDA, timeout_ms=0):
                 msg = "Sem procuração ativa ou permissão no FGTS Digital"
                 logger.warning(f"{cnpj_fmt}: {msg}")
                 try:
@@ -372,7 +396,7 @@ class FGTSDigitalBot:
         padrao = re.compile(rf"(?<![\d.]){raiz[:2]}\.?{raiz[2:5]}\.?{raiz[5:]}")
         limite = time.time() + timeout_s
         while time.time() < limite:
-            modal_aberto = self._elemento_visivel(sel.MODAL_PERFIL_CONTAINER, timeout_ms=300)
+            modal_aberto = self._elemento_visivel(sel.MODAL_PERFIL_CONTAINER, timeout_ms=0)
             if not modal_aberto and any(padrao.search(t or "") for t in self._textos_indicador_perfil()):
                 return True
             time.sleep(0.5)
@@ -519,11 +543,18 @@ class FGTSDigitalBot:
         """
         logger.info(f"Configurando competência '{competencia}' e executando pesquisa...")
         try:
-            # Aguarda o carregamento do formulário de filtros
-            self.page.wait_for_selector("ng-select, button:has-text('Pesquisar')", timeout=10000)
-            
+            # Aguarda o formulário de filtros OU o aviso de 'sem débitos'. Sem débito em aberto
+            # (COB0003), o portal não exibe o filtro de competência (confirmado em 27/10/2026).
+            self.page.wait_for_selector(
+                "ng-select, button:has-text('Pesquisar'), " + ", ".join(sel.ALERTA_SEM_DEBITOS),
+                timeout=10000
+            )
+            if self._elemento_visivel(sel.ALERTA_SEM_DEBITOS, timeout_ms=0) and not self.page.locator("ng-select").first.is_visible():
+                logger.info("Portal informa que não há débitos em aberto (COB0003); filtro de competência não exibido.")
+                return True
+
             ng_select = self.page.locator("ng-select").first
-            if not ng_select.is_visible(timeout=5000):
+            if not ng_select.is_visible():
                 logger.warning("Campo ng-select de competência não visível.")
                 return False
 
@@ -552,7 +583,7 @@ class FGTSDigitalBot:
 
                 # Clica na opção correspondente na lista suspensa
                 opcao = self.page.locator(f".ng-dropdown-panel .ng-option:has-text('{competencia}')").first
-                if opcao.is_visible(timeout=2000):
+                if self._aguardar_visivel(opcao, 2000):
                     opcao.click()
                     logger.info(f"Opção '{competencia}' clicada no dropdown.")
                 else:
@@ -564,7 +595,7 @@ class FGTSDigitalBot:
             # Clica no botão Pesquisar
             logger.info("Clicando no botão 'Pesquisar'...")
             btn_pesquisar = self.page.locator("button.secondary:has-text('Pesquisar'), button:has-text('Pesquisar')").first
-            if btn_pesquisar.is_visible(timeout=3000):
+            if btn_pesquisar.is_visible():
                 btn_pesquisar.click()
             else:
                 self._clicar_primeiro_disponivel(sel.GUIA_RAPIDA_BTN_PESQUISAR, timeout_ms=3000)
@@ -644,7 +675,7 @@ class FGTSDigitalBot:
         if not btn_alvo:
             try:
                 loc_header_mensal = self.page.locator("text=/Mensal\\s*-\\s*Vencimento/i").first
-                if loc_header_mensal.is_visible(timeout=1000):
+                if loc_header_mensal.is_visible():
                     cabs_apos = loc_header_mensal.locator(f"xpath=following::*[self::h1 or self::h2 or self::h3 or self::h4 or self::h5 or self::h6 or self::strong or self::div or self::span][contains(text(), '{secao_nome}')]").all()
                     for cab in cabs_apos:
                         parent = cab.locator("xpath=..")
@@ -721,7 +752,7 @@ class FGTSDigitalBot:
             ]
             for b_sel in botoes_confirmar:
                 btn = self.page.locator(b_sel).first
-                if btn.is_visible(timeout=800):
+                if btn.is_visible():
                     logger.info(f"Confirmando modal com botão: '{b_sel}'")
                     btn.click()
                     time.sleep(1.0)
@@ -811,7 +842,7 @@ class FGTSDigitalBot:
         try:
             # 1. Se o modal de confirmação 'Gerar guia' já estiver aberto na tela
             btn_confirmar = self.page.locator("button:has-text('Confirmar'), button.primary:has-text('Confirmar')").first
-            if btn_confirmar.is_visible(timeout=1000):
+            if btn_confirmar.is_visible():
                 logger.info("Modal 'Gerar guia' já está aberto! Clicando em 'Confirmar'...")
                 btn_confirmar.click()
             else:
@@ -837,7 +868,7 @@ class FGTSDigitalBot:
                 time.sleep(1.0)
 
                 # Verifica se abriu o modal de confirmação 'Confirma nova emissão?'
-                if btn_confirmar.is_visible(timeout=3000):
+                if self._aguardar_visivel(btn_confirmar, 3000):
                     logger.info("Modal 'Gerar guia - Confirma nova emissão?' exibido! Clicando em 'Confirmar'...")
                     btn_confirmar.click()
 
@@ -860,7 +891,7 @@ class FGTSDigitalBot:
                 ]
                 for s_pos in seletores_pos:
                     btn_pos = self.page.locator(s_pos).first
-                    if btn_pos.is_visible(timeout=1000):
+                    if btn_pos.is_visible():
                         logger.info(f"Clicando no botão de download '{s_pos}'...")
                         btn_pos.click()
                         time.sleep(2.0)
@@ -975,7 +1006,7 @@ class FGTSDigitalBot:
                 logger.warning(f"{cnpj_fmt}: Não foi possível executar a pesquisa para a competência {competencia}.")
 
             # 3. Verifica mensagens de status/bloqueio (ex: COB0003 - Não há débitos de interesse)
-            if self._elemento_visivel(sel.ALERTA_SEM_DEBITOS, timeout_ms=2500):
+            if self._elemento_visivel(sel.ALERTA_SEM_DEBITOS, timeout_ms=0):
                 resultado["status"] = "Sem Débitos / Movimento"
                 resultado["detalhes"] = "Não há débitos de interesse para o empregador (COB0003)."
                 logger.info(f"{cnpj_fmt}: {resultado['status']}")
@@ -990,7 +1021,7 @@ class FGTSDigitalBot:
                 time.sleep(1.0)
                 return resultado
 
-            if self._elemento_visivel(sel.ALERTA_ESOCIAL_PENDENTE, timeout_ms=2000):
+            if self._elemento_visivel(sel.ALERTA_ESOCIAL_PENDENTE, timeout_ms=0):
                 resultado["status"] = "Pendente eSocial"
                 resultado["detalhes"] = "Folha de pagamento ainda não transmitida ou fechada no eSocial."
                 logger.warning(f"{cnpj_fmt}: {resultado['status']}")
@@ -1179,13 +1210,20 @@ class FGTSDigitalBot:
         self,
         empresas: List[Dict[str, Any]],
         competencia: str,
-        callback_progresso: Optional[Any] = None,
+        callback_progresso: Optional[Callable[[int, int, Dict[str, Any]], None]] = None,
         bloquear_se_divergente: bool = True,
         apenas_conferir: bool = False,
-        exigir_valor_esperado: bool = True
+        exigir_valor_esperado: bool = True,
+        templates_nomes: Optional[Dict[str, str]] = None,
+        callback_inicio: Optional[Callable[[int, int, Dict[str, Any]], None]] = None,
+        evento_parar: Optional[threading.Event] = None
     ) -> List[Dict[str, Any]]:
         """
         Itera sobre a lista de empresas, alternando perfis e emitindo as guias (ou apenas conferindo valores).
+        Laço único usado pela interface e pela linha de comando:
+          - callback_inicio(idx, total, empresa): antes de processar cada empresa;
+          - callback_progresso(idx, total, resultado): depois de cada empresa;
+          - evento_parar: se sinalizado, encerra antes da próxima empresa.
         """
         resultados = []
         total = len(empresas)
@@ -1194,10 +1232,20 @@ class FGTSDigitalBot:
         logger.info(f"Iniciando [{modo_txt}] de {total} empresas para a competência {competencia}...")
 
         for idx, emp in enumerate(empresas, start=1):
+            if evento_parar is not None and evento_parar.is_set():
+                logger.warning("Execução interrompida pelo usuário.")
+                break
+
             cnpj = emp["cnpj"]
             razao = emp["razao_social"]
             comp_empresa = emp.get("competencia") or competencia
             fgts_esperado = float(emp.get("fgts_esperado", 0.0) or 0.0)
+
+            if callback_inicio:
+                try:
+                    callback_inicio(idx, total, emp)
+                except Exception:
+                    pass
 
             logger.info(f"[{idx}/{total}] Processando {emp['cnpj_formatado']} - {razao} (FGTS Esperado: R$ {fgts_esperado:.2f})...")
 
@@ -1226,6 +1274,7 @@ class FGTSDigitalBot:
                     comp_empresa,
                     fgts_esperado=fgts_esperado,
                     bloquear_se_divergente=bloquear_se_divergente,
+                    templates_nomes=templates_nomes,
                     apenas_conferir=apenas_conferir,
                     exigir_valor_esperado=exigir_valor_esperado
                 )
@@ -1241,5 +1290,5 @@ class FGTSDigitalBot:
             # Pequeno intervalo amigável entre requisições
             time.sleep(1.0)
 
-        logger.info(f"Lote concluído: {total} empresas processadas.")
+        logger.info(f"Lote concluído: {len(resultados)} de {total} empresas processadas.")
         return resultados

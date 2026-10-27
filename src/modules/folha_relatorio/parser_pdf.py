@@ -12,6 +12,7 @@ import pandas as pd
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
+from config import settings
 
 from reportlab.lib.pagesizes import letter, landscape
 from reportlab.lib import colors
@@ -34,7 +35,7 @@ class RelatorioFolhaParser:
             "emp_cred_tr_resc": False,
             "simples_dom": False
         }
-        cfg_path = Path("config/parametros.json")
+        cfg_path = settings.PARAMETROS_PATH
         if cfg_path.exists():
             try:
                 import json

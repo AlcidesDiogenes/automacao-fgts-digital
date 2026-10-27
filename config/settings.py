@@ -18,10 +18,30 @@ if env_config.exists():
 elif env_root.exists():
     load_dotenv(env_root)
 
-# Configurações de caminhos
+# Configurações de caminhos (sempre absolutos, a partir da raiz do projeto,
+# para não depender da pasta de onde o programa foi aberto)
 DATA_DIR = BASE_DIR / "data"
 DEFAULT_OUTPUT_DIR = DATA_DIR / "output"
 DEFAULT_EXCEL_PATH = DATA_DIR / "empresas_modelo.xlsx"
+LOGS_DIR = DATA_DIR / "logs"
+BROWSER_PROFILE_DIR = DATA_DIR / "browser_profile"
+PARAMETROS_PATH = BASE_DIR / "config" / "parametros.json"
+
+
+def carregar_parametros() -> dict:
+    """Lê config/parametros.json (dicionário vazio se não existir ou estiver inválido)."""
+    import json
+    try:
+        with open(PARAMETROS_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def resolver_caminho(caminho) -> Path:
+    """Converte um caminho relativo (ex.: 'data/output' do parametros.json) em absoluto a partir de BASE_DIR."""
+    p = Path(str(caminho).strip())
+    return p if p.is_absolute() else BASE_DIR / p
 
 # Configurações do Certificado
 PFX_PATH = os.getenv("PFX_PATH", "")

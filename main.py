@@ -27,21 +27,34 @@ def executar_modo_cli(args):
 
     logger.info("=== Iniciando Automação FGTS Digital via Linha de Comando ===")
 
-    pfx_path = Path(args.pfx or settings.PFX_PATH)
+    pfx_arg = (args.pfx or settings.PFX_PATH or "").strip()
+    pfx_path = Path(pfx_arg) if pfx_arg else None
     pfx_pass = args.senha or settings.PFX_PASSWORD
     excel_path = Path(args.excel or settings.DEFAULT_EXCEL_PATH)
-    output_dir = Path(args.output or settings.DEFAULT_OUTPUT_DIR)
+    output_dir = settings.resolver_caminho(args.output) if args.output else settings.DEFAULT_OUTPUT_DIR
     competencia = calcular_competencia(args.competencia)
     headless = args.headless or settings.HEADLESS
 
-    # 1. Valida certificado
-    cert_mgr = CertManager(str(pfx_path), pfx_pass)
-    info_cert = cert_mgr.inspecionar()
-    if not info_cert.get("valido"):
-        logger.error(f"Certificado inválido: {info_cert.get('erro')}")
-        sys.exit(1)
+    # Mesmas preferências da interface (config/parametros.json)
+    parametros = settings.carregar_parametros()
+    nomes = parametros.get("nomenclatura", {})
+    templates_nomes = {
+        "guia": nomes.get("guia") or "FGTS - Competencia",
+        "relatorio_fgts": nomes.get("relatorio_fgts") or "RE FGTS - Competencia",
+        "relatorio_consignado": nomes.get("relatorio_consignado") or "Consignado FGTS - Competencia",
+    }
+    exigir_valor_esperado = bool(parametros.get("emissao", {}).get("exigir_valor_esperado", True))
 
-    logger.info(f"Certificado: {info_cert['titular']} (Validade: {info_cert['validade']})")
+    # 1. Certificado: arquivo PFX (se informado) ou repositório do Windows
+    if pfx_path:
+        cert_mgr = CertManager(str(pfx_path), pfx_pass)
+        info_cert = cert_mgr.inspecionar()
+        if not info_cert.get("valido"):
+            logger.error(f"Certificado inválido: {info_cert.get('erro')}")
+            sys.exit(1)
+        logger.info(f"Certificado: {info_cert['titular']} (Validade: {info_cert['validade']})")
+    else:
+        logger.info("Nenhum arquivo PFX informado: usando o certificado instalado no Windows.")
 
     # 2. Lê empresas
     if not excel_path.exists():
@@ -71,7 +84,13 @@ def executar_modo_cli(args):
             logger.error("Falha ao autenticar no FGTS Digital.")
             sys.exit(1)
 
-        resultados = bot.processar_lote(empresas, competencia)
+        resultados = bot.processar_lote(
+            empresas,
+            competencia,
+            apenas_conferir=args.conferir,
+            exigir_valor_esperado=exigir_valor_esperado,
+            templates_nomes=templates_nomes
+        )
         rel_path = ExcelManager.gerar_relatorio_execucao(resultados, output_dir, competencia)
         logger.info(f"Processamento concluído com sucesso! Relatório gerado: {rel_path}")
 
@@ -88,11 +107,12 @@ def main():
     parser.add_argument("--excel", help="Caminho da planilha de empresas (.xlsx)")
     parser.add_argument("--output", help="Pasta de saída para os arquivos")
     parser.add_argument("--headless", action="store_true", help="Executar navegador em segundo plano")
+    parser.add_argument("--conferir", action="store_true", help="Apenas conferir valores no portal, sem emitir guias")
 
     args = parser.parse_args()
 
     # Configura logs em arquivo na pasta data/logs
-    setup_logger(log_dir=settings.DATA_DIR / "logs")
+    setup_logger(log_dir=settings.LOGS_DIR)
 
     if args.cli:
         executar_modo_cli(args)

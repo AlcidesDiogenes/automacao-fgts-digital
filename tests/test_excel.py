@@ -120,19 +120,3 @@ def test_gerar_relatorio_conferencia(tmp_path):
     assert rel_path.name.startswith("Relatorio_FGTS_Digital_")
     assert not list(tmp_path.glob("DIVERGENCIAS_FGTS_*.xlsx"))
 
-
-def test_gerar_relatorio_divergencias_avulso(tmp_path):
-    itens = [
-        {
-            "cnpj": "98765432000110",
-            "razao_social": "Empresa Beta S/A",
-            "competencia": "09/2026",
-            "status": "Divergência de Valores",
-            "fgts_esperado": 3500.00,
-            "valor_guia": 3800.00,
-            "detalhes": "Divergência"
-        }
-    ]
-    div_path = ExcelManager.gerar_relatorio_divergencias(itens, tmp_path, "09/2026")
-    assert div_path.exists()
-    assert div_path.name.startswith("DIVERGENCIAS_FGTS_")

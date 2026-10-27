@@ -109,12 +109,17 @@ def formatar_nome_documento(template: str, contexto: dict) -> str:
 
     resultado = template
 
-    # Substituição flexível de variáveis
-    resultado = re.sub(r"\{?compet[êe]ncia\}?", comp, resultado, flags=re.IGNORECASE)
-    resultado = re.sub(r"\{?comp\}?", comp, resultado, flags=re.IGNORECASE)
-    resultado = re.sub(r"\{?cnpj\}?", cnpj, resultado, flags=re.IGNORECASE)
-    resultado = re.sub(r"\{?empresa\}?", razao, resultado, flags=re.IGNORECASE)
-    resultado = re.sub(r"\{?raz[aã]o\}?", razao, resultado, flags=re.IGNORECASE)
+    # Substituição flexível de variáveis: entre chaves em qualquer posição, ou sem chaves
+    # apenas como palavra isolada (não altera 'Comprovante', 'Empresarial' etc.).
+    # '_', '-', espaço e dígitos contam como separadores (ex.: 'FGTS_Competencia_CNPJ').
+    def _tag(nome: str) -> str:
+        return rf"\{{{nome}\}}|(?<![^\W\d_]){nome}(?![^\W\d_])"
+
+    resultado = re.sub(_tag(r"compet[êe]ncia"), comp, resultado, flags=re.IGNORECASE)
+    resultado = re.sub(_tag(r"comp"), comp, resultado, flags=re.IGNORECASE)
+    resultado = re.sub(_tag(r"cnpj"), cnpj, resultado, flags=re.IGNORECASE)
+    resultado = re.sub(_tag(r"empresa"), razao, resultado, flags=re.IGNORECASE)
+    resultado = re.sub(_tag(r"raz[aã]o"), razao, resultado, flags=re.IGNORECASE)
 
     # Limpeza de múltiplos espaços
     resultado = re.sub(r"\s+", " ", resultado).strip(" -_")

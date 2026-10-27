@@ -198,9 +198,13 @@ O sistema oferece máxima flexibilidade de autenticação com o Gov.br:
 | Método | Como Funciona | Recomendado para |
 | :--- | :--- | :--- |
 | **Certificado Instalado (Windows)** | Abre o navegador conectado ao repositório nativo do Windows (mTLS transparente). | Contadores que já possuem o certificado A1 ou token A3 configurado no computador. |
-| **Arquivo PFX/P12** | O usuário seleciona o arquivo e digita a senha. O sistema valida os bytes criptográficos e autentica a sessão. | Ambientes onde o certificado não pode ser instalado de forma permanente no Windows. |
+| **Arquivo PFX/P12** | O usuário seleciona o arquivo e digita a senha. O sistema valida o certificado (senha, validade, chave privada) e abre o **Chromium do Playwright** com o `.pfx` injetado via `client_certificates` nas origens do Gov.br e do FGTS Digital. Usa perfil próprio em `data/pfx_profile/`. | Ambientes onde o certificado não pode ser instalado de forma permanente no Windows. |
 
 > **Nota de Segurança**: A senha e o certificado são manipulados exclusivamente em memória e nunca transmitidos externamente.
+>
+> **Por que o modo PFX não usa o Google Chrome?** O Chrome do sistema só enxerga certificados instalados no Windows; um arquivo `.pfx` só pode ser apresentado pelo Chromium controlado pelo Playwright. Por isso, no modo PFX a janela do Chrome na porta 9222 é ignorada.
+>
+> ⚠️ O modo PFX foi validado com testes automatizados, mas **ainda não com o portal real** (falta um teste com um `.pfx` válido).
 
 ---
 
@@ -246,6 +250,7 @@ Basta dar um duplo clique no executável em lote:
 - `iniciar_com_console.bat` (Abre a aplicação com janela de console auxiliar para depuração detalhada)
 
 ### Execução via Terminal (CLI)
+A linha de comando usa as mesmas preferências da interface (`config/parametros.json`: nomenclatura e "exigir valor esperado"). Sem `--pfx` (e sem `PFX_PATH` no `.env`), usa o certificado instalado no Windows.
 Você também pode disparar a automação diretamente por linha de comando:
 ```powershell
 # Execução da competência anterior
@@ -253,6 +258,12 @@ Você também pode disparar a automação diretamente por linha de comando:
 
 # Execução com competência específica
 .\venv\Scripts\python.exe main.py --cli --competencia 09/2026
+
+# Apenas conferir valores (não emite guias)
+.\venv\Scripts\python.exe main.py --cli --conferir --competencia 09/2026
+
+# Com certificado A1 em arquivo
+.\venv\Scripts\python.exe main.py --cli --pfx "C:\caminho\certificado.pfx" --senha "..." --competencia 09/2026
 ```
 
 ---
@@ -327,7 +338,10 @@ O projeto conta com testes unitários cobrindo o gerenciamento de certificados, 
 
 - `tests/test_bot_seguranca.py` roda o robô contra um **portal FGTS Digital falso** (HTML servido pelo próprio Playwright por interceptação de rotas — nenhuma requisição sai para a internet). Requer o Chromium do Playwright (`playwright install chromium`).
 - `tests/test_validacao_pdf.py` gera PDFs sintéticos com `reportlab` e testa a validação de conteúdo.
-- `tests/test_pendencias_fase2.py` contém falhas já confirmadas e ainda não corrigidas, marcadas como `xfail(strict=True)`.
+- `tests/test_bot_esperas.py` testa as esperas do robô (o `is_visible(timeout=...)` do Playwright ignora o timeout) e a detecção imediata de "sem débitos".
+- `tests/test_ui_execucao.py` abre a janela real com robô e navegador falsos: contadores, mensagem final, botão *Parar* e nenhuma alteração de widget fora da thread principal.
+- `tests/test_browser_modos.py` confere a escolha do navegador por modo de certificado (PFX injetado via `client_certificates`, sem CDP).
+- `tests/test_logger.py` garante que o arquivo `data/logs/execucao_AAAA-MM-DD.log` é criado.
 
 ---
 

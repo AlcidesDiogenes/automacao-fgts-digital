@@ -71,7 +71,7 @@ class FGTSDigitalApp(ctk.CTk):
         self.comp_manual_var = tk.StringVar()
 
         # Importação de Relatório de Folha (PDF)
-        pdf_padrao = Path("data/relatorio_encargos_exemplo.pdf")
+        pdf_padrao = settings.DATA_DIR / "relatorio_encargos_exemplo.pdf"
         self.pdf_relatorio_path_var = tk.StringVar(value=str(pdf_padrao.resolve()) if pdf_padrao.exists() else "")
         self.empresas_folha_pdf: List[Dict[str, Any]] = []
         self.chk_todas_folha_var = tk.BooleanVar(value=True)
@@ -79,7 +79,7 @@ class FGTSDigitalApp(ctk.CTk):
         self.apenas_conferir_var = tk.BooleanVar(value=False)
 
         self.is_running = False
-        self.stop_requested = False
+        self.evento_parar = threading.Event()
         self.browser_manager = None
         self.empresas_carregadas: List[Dict[str, Any]] = []
 
@@ -1269,7 +1269,7 @@ class FGTSDigitalApp(ctk.CTk):
 
     def _carregar_parametros(self):
         """Carrega os parâmetros de config/parametros.json para as variáveis de estado."""
-        cfg_path = Path("config/parametros.json")
+        cfg_path = settings.PARAMETROS_PATH
         if not cfg_path.exists():
             return
         try:
@@ -1331,14 +1331,14 @@ class FGTSDigitalApp(ctk.CTk):
     def _salvar_parametros_silencioso(self):
         """Persiste os parâmetros sem diálogos (usado pelos switches do painel)."""
         try:
-            with open(Path("config/parametros.json"), "w", encoding="utf-8") as f:
+            with open(settings.PARAMETROS_PATH, "w", encoding="utf-8") as f:
                 json.dump(self._montar_dados_parametros(), f, indent=2, ensure_ascii=False)
         except Exception as e:
             logger.warning(f"Não foi possível salvar config/parametros.json: {e}")
 
     def _salvar_parametros(self):
         """Persiste os parâmetros em config/parametros.json e reaplica regras."""
-        cfg_path = Path("config/parametros.json")
+        cfg_path = settings.PARAMETROS_PATH
         dados = self._montar_dados_parametros()
         try:
             cfg_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1474,7 +1474,7 @@ class FGTSDigitalApp(ctk.CTk):
             self.output_dir_var.set(pasta)
 
     def _abrir_pasta_saida(self):
-        pasta = Path(self.output_dir_var.get())
+        pasta = settings.resolver_caminho(self.output_dir_var.get())
         pasta.mkdir(parents=True, exist_ok=True)
         os.startfile(str(pasta.resolve()))
 
@@ -1776,11 +1776,41 @@ class FGTSDigitalApp(ctk.CTk):
 
     # -------------------------------------------------------------------------
     # EXECUÇÃO DO ROBÔ (WORKER THREAD)
+    # O Tkinter não é thread-safe: a thread do robô nunca toca em widgets nem em
+    # variáveis Tk. A configuração é lida na thread principal (_coletar_config_execucao)
+    # e toda atualização de tela passa por _na_ui (self.after(0, ...)).
     # -------------------------------------------------------------------------
+
+    def _na_ui(self, funcao, *args, **kwargs):
+        """Agenda uma função para rodar na thread principal do Tkinter."""
+        try:
+            self.after(0, lambda: funcao(*args, **kwargs))
+        except Exception:
+            pass
+
+    def _coletar_config_execucao(self) -> Dict[str, Any]:
+        """Lê todas as opções da tela (thread principal) para a thread do robô."""
+        modo_cert = self.cert_modo_var.get()
+        return {
+            "competencia": self._obter_competencia_selecionada(),
+            "pfx_path": Path(self.pfx_path_var.get().strip()) if modo_cert == "pfx" else None,
+            "pfx_pass": self.pfx_pass_var.get() if modo_cert == "pfx" else "",
+            "excel_path": Path(self.excel_path_var.get().strip()),
+            "output_dir": settings.resolver_caminho(self.output_dir_var.get()),
+            "headless": self.headless_var.get(),
+            "templates_nomes": {
+                "guia": self.nome_guia_var.get().strip() or "FGTS - Competencia",
+                "relatorio_fgts": self.nome_rel_fgts_var.get().strip() or "RE FGTS - Competencia",
+                "relatorio_consignado": self.nome_rel_cons_var.get().strip() or "Consignado FGTS - Competencia"
+            },
+            "apenas_conferir": self.apenas_conferir_var.get(),
+            "bloquear_se_divergente": self.travar_divergencia_var.get(),
+            "exigir_valor_esperado": self.exigir_valor_esperado_var.get(),
+        }
 
     def _iniciar_execucao(self):
         if self.is_running:
-            self.stop_requested = True
+            self.evento_parar.set()
             self.btn_iniciar.configure(text="Cancelando...", state="disabled")
             return
 
@@ -1796,187 +1826,155 @@ class FGTSDigitalApp(ctk.CTk):
             messagebox.showerror("Atenção", "A planilha de empresas informada não existe.")
             return
 
+        config = self._coletar_config_execucao()
         self.is_running = True
-        self.stop_requested = False
+        self.evento_parar.clear()
         self.btn_iniciar.configure(text="⏹ Parar Execução", fg_color=CORES["danger"], hover_color=CORES["danger_hover"])
         self.progress_bar.set(0)
 
-        thread = threading.Thread(target=self._executar_em_background, daemon=True)
+        thread = threading.Thread(target=self._executar_em_background, args=(config,), daemon=True)
         thread.start()
 
-    def _executar_em_background(self):
-        competencia = self._obter_competencia_selecionada()
-        modo_cert = self.cert_modo_var.get()
-        pfx_path = Path(self.pfx_path_var.get().strip()) if modo_cert == "pfx" else None
-        pfx_pass = self.pfx_pass_var.get() if modo_cert == "pfx" else ""
-        excel_path = Path(self.excel_path_var.get().strip())
-        output_dir = Path(self.output_dir_var.get().strip())
-        headless = self.headless_var.get()
+    @staticmethod
+    def _classificar_resultado(status: str) -> str:
+        """Agrupa o status de uma empresa nos contadores da tela."""
+        st_low = status.lower()
+        if "iguais" in st_low or "conferido" in st_low:
+            return "iguais"
+        if "diverg" in st_low:
+            return "divergencias"
+        if "sucesso" in st_low:
+            return "sucessos"
+        if any(k in st_low for k in ["pendente", "sem debito", "sem débito", "sem movimento", "valor consultado"]):
+            return "pendentes"
+        return "erros"
 
-        templates_nomes = {
-            "guia": self.nome_guia_var.get().strip() or "FGTS - Competencia",
-            "relatorio_fgts": self.nome_rel_fgts_var.get().strip() or "RE FGTS - Competencia",
-            "relatorio_consignado": self.nome_rel_cons_var.get().strip() or "Consignado FGTS - Competencia"
-        }
-
-        apenas_conferir = self.apenas_conferir_var.get()
+    def _executar_em_background(self, config: Dict[str, Any]):
+        competencia = config["competencia"]
+        apenas_conferir = config["apenas_conferir"]
+        output_dir = config["output_dir"]
         modo_rotulo = "Conferência de Valores" if apenas_conferir else "Emissão em Lote"
 
         logger.info(f"--- Iniciando Rodada FGTS Digital Pro: {modo_rotulo} (Competência: {competencia}) ---")
-        self.lbl_progresso.configure(text=f"Carregando lote para competência {competencia}...")
+        self._na_ui(self.lbl_progresso.configure, text=f"Carregando lote para competência {competencia}...")
+
+        contadores = {"sucessos": 0, "pendentes": 0, "erros": 0, "iguais": 0, "divergencias": 0}
+
+        def ao_iniciar_empresa(idx: int, total: int, emp: Dict[str, Any]):
+            if apenas_conferir:
+                texto = f"[{idx}/{total}] Conferindo {emp['cnpj_formatado']} | Iguais: {contadores['iguais']} | Divergências: {contadores['divergencias']}"
+            else:
+                texto = f"[{idx}/{total}] Processando {emp['cnpj_formatado']} | Emitidas: {contadores['sucessos']} | Alertas: {contadores['erros']}"
+            self._na_ui(self.progress_bar.set, (idx - 1) / total)
+            self._na_ui(self.lbl_progresso.configure, text=texto)
+
+        def ao_concluir_empresa(idx: int, total: int, res: Dict[str, Any]):
+            contadores[self._classificar_resultado(res.get("status", ""))] += 1
+            self._na_ui(self.progress_bar.set, idx / total)
 
         try:
-            empresas = ExcelManager.ler_empresas(excel_path, competencia_padrao=competencia)
+            empresas = ExcelManager.ler_empresas(config["excel_path"], competencia_padrao=competencia)
             total = len(empresas)
             if total == 0:
                 logger.warning("Nenhuma empresa válida encontrada na planilha.")
                 return
 
             self.browser_manager = BrowserManager(
-                pfx_path=pfx_path,
-                pfx_password=pfx_pass,
-                headless=headless,
+                pfx_path=config["pfx_path"],
+                pfx_password=config["pfx_pass"],
+                headless=config["headless"],
                 downloads_path=output_dir
             )
 
             page = self.browser_manager.iniciar()
             bot = FGTSDigitalBot(page=page, output_base_dir=output_dir)
 
-            self.lbl_progresso.configure(text="Autenticando no Gov.br com Certificado Digital...")
+            self._na_ui(self.lbl_progresso.configure, text="Autenticando no Gov.br com Certificado Digital...")
             if not bot.login():
                 logger.error("Falha na autenticação inicial com o FGTS Digital.")
-                messagebox.showerror("Erro de Autenticação", "Não foi possível autenticar no portal com o certificado.")
+                self._na_ui(messagebox.showerror, "Erro de Autenticação", "Não foi possível autenticar no portal com o certificado.")
                 return
 
-            resultados = []
-            sucessos = 0
-            pendentes = 0
-            erros = 0
-            iguais = 0
-            divergencias = 0
+            resultados = bot.processar_lote(
+                empresas,
+                competencia,
+                callback_progresso=ao_concluir_empresa,
+                bloquear_se_divergente=config["bloquear_se_divergente"],
+                apenas_conferir=apenas_conferir,
+                exigir_valor_esperado=config["exigir_valor_esperado"],
+                templates_nomes=config["templates_nomes"],
+                callback_inicio=ao_iniciar_empresa,
+                evento_parar=self.evento_parar
+            )
 
-            for idx, emp in enumerate(empresas, start=1):
-                if self.stop_requested:
-                    logger.warning("Execução interrompida pelo usuário.")
-                    break
-
-                progresso_pct = (idx - 1) / total
-                self.progress_bar.set(progresso_pct)
-
-                if apenas_conferir:
-                    self.lbl_progresso.configure(
-                        text=f"[{idx}/{total}] Conferindo {emp['cnpj_formatado']} | Iguais: {iguais} | Divergências: {divergencias}"
-                    )
-                else:
-                    self.lbl_progresso.configure(
-                        text=f"[{idx}/{total}] Processando {emp['cnpj_formatado']} | Emitidas: {sucessos} | Alertas: {erros}"
-                    )
-
-                fgts_esp = float(emp.get("fgts_esperado", 0.0) or 0.0)
-                troca = bot.trocar_perfil(emp["cnpj"])
-                if not troca["sucesso"]:
-                    res = {
-                        "cnpj": emp["cnpj"],
-                        "cnpj_formatado": emp["cnpj_formatado"],
-                        "razao_social": emp["razao_social"],
-                        "competencia": emp.get("competencia") or competencia,
-                        "status": troca.get("status", "Erro de Procuração"),
-                        "valor_guia": 0.0,
-                        "fgts_esperado": fgts_esp,
-                        "diferenca": 0.0,
-                        "arquivo_guia": "",
-                        "arquivo_relatorio": "",
-                        "data_hora": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-                        "detalhes": troca.get("motivo", "Procuração não disponível")
-                    }
-                    erros += 1
-                else:
-                    res = bot.emitir_guia_e_relatorios(
-                        emp["cnpj"],
-                        emp["razao_social"],
-                        emp.get("competencia") or competencia,
-                        fgts_esperado=fgts_esp,
-                        bloquear_se_divergente=self.travar_divergencia_var.get(),
-                        templates_nomes=templates_nomes,
-                        apenas_conferir=apenas_conferir,
-                        exigir_valor_esperado=self.exigir_valor_esperado_var.get()
-                    )
-                    st_low = res["status"].lower()
-                    if "iguais" in st_low or "conferido" in st_low:
-                        iguais += 1
-                    elif "diverg" in st_low:
-                        divergencias += 1
-                    elif "sucesso" in res["status"]:
-                        sucessos += 1
-                    elif any(k in st_low for k in ["pendente", "sem debito", "sem débito", "sem movimento"]):
-                        pendentes += 1
-                    else:
-                        erros += 1
-
-                resultados.append(res)
-
-            self.progress_bar.set(1.0)
-            
             if resultados:
                 rel_path = ExcelManager.gerar_relatorio_execucao(resultados, output_dir, competencia)
                 logger.info(f"Relatório de execução salvo em: {rel_path.name}")
 
-            if apenas_conferir:
-                self.lbl_progresso.configure(
-                    text=f"Conferência Concluída! Total: {total} | Iguais: {iguais} | Divergências: {divergencias} | Pendentes/Sem Débito: {pendentes}"
+            c = contadores
+            interrompido = len(resultados) < total
+            aviso_interrupcao = f"\n\n⏹ Execução interrompida: {len(resultados)} de {total} empresas processadas." if interrompido else ""
+            aviso_div = ""
+            if c["divergencias"] > 0:
+                aviso_div = (
+                    f"\n\n⚠ ATENÇÃO: Foram identificadas {c['divergencias']} divergências de valores! "
+                    f"Consulte o relatório 'Relatorio_FGTS_Digital_*.xlsx' gerado na pasta de saída."
                 )
+
+            if apenas_conferir:
+                texto_final = f"Conferência Concluída! Total: {total} | Iguais: {c['iguais']} | Divergências: {c['divergencias']} | Pendentes/Sem Débito: {c['pendentes']}"
+                titulo = "Conferência Concluída"
                 msg_final = (
-                    f"Conferência de valores finalizada com sucesso!\n\n"
+                    f"Conferência de valores finalizada!\n\n"
                     f"Total de Empresas: {total}\n"
-                    f"Valores Iguais (OK): {iguais}\n"
-                    f"Divergências Detectadas: {divergencias}\n"
-                    f"Sem Movimento / Pendentes: {pendentes}\n"
-                    f"Erros de Procuração: {erros}\n\n"
+                    f"Valores Iguais (OK): {c['iguais']}\n"
+                    f"Divergências Detectadas: {c['divergencias']}\n"
+                    f"Sem Movimento / Pendentes / Consultados: {c['pendentes']}\n"
+                    f"Erros (procuração, perfil, técnicos): {c['erros']}\n\n"
                     f"Nenhuma guia foi emitida.\n"
                     f"O relatório completo de conferência foi salvo na pasta de saída."
                 )
-                if divergencias > 0:
-                    msg_final += f"\n\n⚠ ATENÇÃO: Foram identificadas {divergencias} divergências! Consulte a planilha de divergências gerada na pasta."
-                messagebox.showinfo("Conferência Concluída", msg_final)
             else:
-                self.lbl_progresso.configure(
-                    text=f"Finalizado! Total: {total} | Emitidas: {sucessos} | Pendentes: {pendentes} | Alertas/Divergências: {erros}"
-                )
+                texto_final = f"Finalizado! Total: {total} | Emitidas: {c['sucessos']} | Pendentes: {c['pendentes']} | Alertas: {c['erros']} | Divergências: {c['divergencias']}"
+                titulo = "Processamento Concluído"
                 msg_final = (
-                    f"Lote finalizado com sucesso!\n\n"
-                    f"Total Processadas: {total}\n"
-                    f"Guias Emitidas: {sucessos}\n"
-                    f"Pendentes/Sem Movimento: {pendentes}\n"
-                    f"Alertas/Divergências/Sem Procuração: {erros}\n\n"
+                    f"Lote finalizado!\n\n"
+                    f"Total de Empresas: {total}\n"
+                    f"Guias Emitidas: {c['sucessos']}\n"
+                    f"Pendentes/Sem Movimento: {c['pendentes']}\n"
+                    f"Divergências (não emitidas): {c['divergencias']}\n"
+                    f"Alertas (procuração, perfil, validação de PDF, técnicos): {c['erros']}\n\n"
                     f"Os relatórios e comprovantes estão salvos na pasta de saída."
                 )
-                divergencias_encontradas = [r for r in resultados if "diverg" in str(r.get("status", "")).lower()]
-                if divergencias_encontradas:
-                    msg_final += f"\n\n⚠ ATENÇÃO: Foram identificadas {len(divergencias_encontradas)} divergências de valores! Consulte o relatório 'DIVERGENCIAS_FGTS_*.xlsx' gerado na pasta."
-                messagebox.showinfo("Processamento Concluído", msg_final)
+            self._na_ui(self.lbl_progresso.configure, text=texto_final)
+            self._na_ui(messagebox.showinfo, titulo, msg_final + aviso_div + aviso_interrupcao)
 
         except Exception as e:
             logger.error(f"Erro inesperado durante a automação: {e}")
-            messagebox.showerror("Erro", f"Ocorreu um erro durante o processamento:\n{e}")
+            self._na_ui(messagebox.showerror, "Erro", f"Ocorreu um erro durante o processamento:\n{e}")
         finally:
             if self.browser_manager:
                 self.browser_manager.fechar()
-            self.is_running = False
-            self.stop_requested = False
-            if self.apenas_conferir_var.get():
-                self.btn_iniciar.configure(
-                    text="🔍 Iniciar Conferência de Valores",
-                    fg_color=CORES["success"],
-                    hover_color=CORES["success_hover"],
-                    state="normal"
-                )
-            else:
-                self.btn_iniciar.configure(
-                    text="▶ Iniciar Automação",
-                    fg_color=CORES["success"],
-                    hover_color=CORES["success_hover"],
-                    state="normal"
-                )
+            self._na_ui(self._finalizar_execucao_ui)
+
+    def _finalizar_execucao_ui(self):
+        """Restaura o botão e o estado da tela ao fim da execução (thread principal)."""
+        self.is_running = False
+        self.evento_parar.clear()
+        if self.apenas_conferir_var.get():
+            self.btn_iniciar.configure(
+                text="🔍 Iniciar Conferência de Valores",
+                fg_color=CORES["success"],
+                hover_color=CORES["success_hover"],
+                state="normal"
+            )
+        else:
+            self.btn_iniciar.configure(
+                text="▶ Iniciar Automação",
+                fg_color=CORES["success"],
+                hover_color=CORES["success_hover"],
+                state="normal"
+            )
 
 
 def iniciar_aplicacao():

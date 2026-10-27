@@ -182,3 +182,11 @@ def test_extrair_valor_fgts_multiplos_cards_mensais():
     assert val_max == 12345.67
 
 
+
+
+def test_nomenclatura_nao_altera_palavras_que_contem_tags():
+    from src.modules.fgts_digital.parser import formatar_nome_documento
+    ctx = {"competencia": "09/2026", "cnpj": "12345678000190", "razao_social": "Alfa"}
+    assert formatar_nome_documento("Comprovante - {competencia}", ctx) == "Comprovante - 09-2026.pdf"
+    assert formatar_nome_documento("Guia Empresarial - Comp", ctx) == "Guia Empresarial - 09-2026.pdf"
+    assert formatar_nome_documento("{cnpj}_{empresa}", ctx) == "12345678000190_Alfa.pdf"
