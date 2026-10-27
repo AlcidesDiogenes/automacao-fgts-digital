@@ -15,7 +15,6 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 import customtkinter as ctk
 
-from src.auth.cert_manager import CertManager
 from src.core.excel_manager import ExcelManager
 from src.core.browser import BrowserManager
 from src.modules.fgts_digital.bot import FGTSDigitalBot
@@ -41,9 +40,6 @@ class FGTSDigitalApp(ctk.CTk):
         self.minsize(980, 580)
 
         # Variáveis de estado
-        self.cert_modo_var = tk.StringVar(value="windows")  # "windows" ou "pfx"
-        self.pfx_path_var = tk.StringVar(value=settings.PFX_PATH)
-        self.pfx_pass_var = tk.StringVar(value=settings.PFX_PASSWORD)
         self.excel_path_var = tk.StringVar(value=str(settings.DEFAULT_EXCEL_PATH))
         self.output_dir_var = tk.StringVar(value=str(settings.DEFAULT_OUTPUT_DIR))
         self.headless_var = tk.BooleanVar(value=settings.HEADLESS)
@@ -102,7 +98,6 @@ class FGTSDigitalApp(ctk.CTk):
                 pass
 
         self._carregar_e_exibir_empresas()
-        self._validar_certificado()
         self._atualizar_cards_kpi()
 
         # Se houver PDF de exemplo padrão, processa na inicialização
@@ -260,8 +255,9 @@ class FGTSDigitalApp(ctk.CTk):
             coluna=1,
             icone="🔒",
             titulo="Certificado Digital",
-            valor="Não testado",
-            destaque="Certificado A1 (.pfx)"
+            valor="Certificado do Windows",
+            destaque="Repositório nativo do Windows",
+            cor_destaque="#22C55E"
         )
         self.card_kpi_trava = self._criar_card_kpi(
             parent=self.kpi_frame,
@@ -983,31 +979,10 @@ class FGTSDigitalApp(ctk.CTk):
         )
         lbl_tit_cert.grid(row=0, column=0, columnspan=3, padx=15, pady=(12, 6), sticky="w")
 
-        # Seleção de Modo do Certificado
-        modo_box = ctk.CTkFrame(card_cert, fg_color="transparent")
-        modo_box.grid(row=1, column=0, columnspan=3, padx=15, pady=(0, 8), sticky="w")
-
-        rb_cert_win = ctk.CTkRadioButton(
-            modo_box,
-            text="Certificado Instalado no Windows (Automático / Recomendado)",
-            variable=self.cert_modo_var,
-            value="windows",
-            command=self._alternar_modo_certificado
-        )
-        rb_cert_win.pack(side="left", padx=(0, 15))
-
-        rb_cert_pfx = ctk.CTkRadioButton(
-            modo_box,
-            text="Arquivo .PFX Avulso (Opcional)",
-            variable=self.cert_modo_var,
-            value="pfx",
-            command=self._alternar_modo_certificado
-        )
-        rb_cert_pfx.pack(side="left")
-
-        # Frame de aviso quando modo Windows está ativo
+        # Somente certificado instalado no Windows: o modo arquivo .PFX foi removido
+        # porque quebra o captcha do Gov.br (ver docs/decisoes/ADR-0004).
         self.frame_cert_win_aviso = ctk.CTkFrame(card_cert, fg_color=("#ECFDF5", "#064E3B"), corner_radius=6)
-        self.frame_cert_win_aviso.grid(row=2, column=0, columnspan=3, padx=15, pady=(0, 10), sticky="ew")
+        self.frame_cert_win_aviso.grid(row=1, column=0, columnspan=3, padx=15, pady=(0, 12), sticky="ew")
 
         lbl_win_desc = ctk.CTkLabel(
             self.frame_cert_win_aviso,
@@ -1016,45 +991,6 @@ class FGTSDigitalApp(ctk.CTk):
             text_color=("#065F46", "#34D399")
         )
         lbl_win_desc.pack(padx=12, pady=8, anchor="w")
-
-        # Frame com campos de arquivo .PFX (visível apenas no modo pfx)
-        self.frame_cert_pfx_campos = ctk.CTkFrame(card_cert, fg_color="transparent")
-        self.frame_cert_pfx_campos.grid(row=3, column=0, columnspan=3, padx=10, pady=(0, 8), sticky="ew")
-        self.frame_cert_pfx_campos.grid_columnconfigure(1, weight=1)
-
-        lbl_pfx = ctk.CTkLabel(self.frame_cert_pfx_campos, text="Arquivo .pfx:", font=ctk.CTkFont(size=12))
-        lbl_pfx.grid(row=0, column=0, padx=5, pady=4, sticky="w")
-
-        entry_cert = ctk.CTkEntry(self.frame_cert_pfx_campos, textvariable=self.pfx_path_var, placeholder_text="Selecione o arquivo do certificado digital...")
-        entry_cert.grid(row=0, column=1, padx=5, pady=4, sticky="ew")
-
-        btn_buscar_cert = ctk.CTkButton(self.frame_cert_pfx_campos, text="Buscar...", width=80, command=self._selecionar_certificado)
-        btn_buscar_cert.grid(row=0, column=2, padx=5, pady=4)
-
-        lbl_senha = ctk.CTkLabel(self.frame_cert_pfx_campos, text="Senha do Certificado:", font=ctk.CTkFont(size=12))
-        lbl_senha.grid(row=1, column=0, padx=5, pady=4, sticky="w")
-
-        self.entry_senha = ctk.CTkEntry(self.frame_cert_pfx_campos, textvariable=self.pfx_pass_var, show="*")
-        self.entry_senha.grid(row=1, column=1, padx=5, pady=4, sticky="ew")
-
-        btn_validar_cert = ctk.CTkButton(
-            self.frame_cert_pfx_campos,
-            text="Testar Validade",
-            width=110,
-            fg_color="#334155",
-            hover_color="#475569",
-            command=self._validar_certificado
-        )
-        btn_validar_cert.grid(row=1, column=2, padx=5, pady=4)
-
-        self.lbl_cert_status = ctk.CTkLabel(self.frame_cert_pfx_campos, text="", font=ctk.CTkFont(size=11), text_color="#94A3B8")
-        self.lbl_cert_status.grid(row=2, column=0, columnspan=3, padx=5, pady=(2, 6), sticky="w")
-
-        # Inicializa o estado visual do certificado
-        if self.cert_modo_var.get() == "windows":
-            self.frame_cert_pfx_campos.grid_remove()
-        else:
-            self.frame_cert_win_aviso.grid_remove()
 
         # Card 2: Regras de Leitura do Relatório de Encargos (PDF)
         card_regras = ctk.CTkFrame(
@@ -1384,19 +1320,6 @@ class FGTSDigitalApp(ctk.CTk):
     # MÉTODOS DE AÇÃO & LÓGICA DE DADOS
     # -------------------------------------------------------------------------
 
-    def _alternar_modo_certificado(self):
-        """Alterna a exibição entre o modo Certificado do Windows e Arquivo .PFX."""
-        modo = self.cert_modo_var.get()
-        if modo == "windows":
-            self.frame_cert_win_aviso.grid()
-            self.frame_cert_pfx_campos.grid_remove()
-            self.card_kpi_cert["val"].configure(text="Certificado do Windows")
-            self.card_kpi_cert["sub"].configure(text="Repositório Nativo Ativo", text_color="#22C55E")
-        else:
-            self.frame_cert_win_aviso.grid_remove()
-            self.frame_cert_pfx_campos.grid()
-            self._validar_certificado()
-
     def _aplicar_preset_nomes(self, preset: str):
         """Aplica padrões de nomenclatura pré-definidos."""
         if preset == "padrao":
@@ -1411,40 +1334,6 @@ class FGTSDigitalApp(ctk.CTk):
             self.nome_guia_var.set("FGTS_Competencia_CNPJ")
             self.nome_rel_fgts_var.set("RE_FGTS_Competencia_CNPJ")
             self.nome_rel_cons_var.set("Consignado_FGTS_Competencia_CNPJ")
-
-    def _selecionar_certificado(self):
-        arquivo = filedialog.askopenfilename(
-            title="Selecione o Certificado Digital A1",
-            filetypes=[("Certificado Digital (*.pfx, *.p12)", "*.pfx *.p12"), ("Todos os arquivos", "*.*")]
-        )
-        if arquivo:
-            self.pfx_path_var.set(arquivo)
-            self._validar_certificado()
-
-    def _validar_certificado(self):
-        modo = self.cert_modo_var.get()
-        if modo == "windows":
-            self.card_kpi_cert["val"].configure(text="Certificado do Windows")
-            self.card_kpi_cert["sub"].configure(text="Repositório Nativo Ativo", text_color="#22C55E")
-            return
-
-        caminho = Path(self.pfx_path_var.get().strip())
-        senha = self.pfx_pass_var.get()
-        if not caminho.exists():
-            self.lbl_cert_status.configure(text="✖ Arquivo não encontrado.", text_color="#EF4444")
-            self.card_kpi_cert["val"].configure(text="Inexistente")
-            self.card_kpi_cert["sub"].configure(text="Verifique o arquivo", text_color="#EF4444")
-            return
-
-        sucesso, msg = CertManager.validar_certificado(caminho, senha)
-        if sucesso:
-            self.lbl_cert_status.configure(text=f"✔ {msg}", text_color="#22C55E")
-            self.card_kpi_cert["val"].configure(text="Certificado Válido")
-            self.card_kpi_cert["sub"].configure(text="A1 Pronto para mTLS", text_color="#22C55E")
-        else:
-            self.lbl_cert_status.configure(text=f"✖ {msg}", text_color="#EF4444")
-            self.card_kpi_cert["val"].configure(text="Senha Inválida")
-            self.card_kpi_cert["sub"].configure(text="Erro ao abrir chave", text_color="#EF4444")
 
     def _selecionar_excel(self):
         arquivo = filedialog.askopenfilename(
@@ -1790,11 +1679,8 @@ class FGTSDigitalApp(ctk.CTk):
 
     def _coletar_config_execucao(self) -> Dict[str, Any]:
         """Lê todas as opções da tela (thread principal) para a thread do robô."""
-        modo_cert = self.cert_modo_var.get()
         return {
             "competencia": self._obter_competencia_selecionada(),
-            "pfx_path": Path(self.pfx_path_var.get().strip()) if modo_cert == "pfx" else None,
-            "pfx_pass": self.pfx_pass_var.get() if modo_cert == "pfx" else "",
             "excel_path": Path(self.excel_path_var.get().strip()),
             "output_dir": settings.resolver_caminho(self.output_dir_var.get()),
             "headless": self.headless_var.get(),
@@ -1813,13 +1699,6 @@ class FGTSDigitalApp(ctk.CTk):
             self.evento_parar.set()
             self.btn_iniciar.configure(text="Cancelando...", state="disabled")
             return
-
-        modo_cert = self.cert_modo_var.get()
-        if modo_cert == "pfx":
-            pfx_path = Path(self.pfx_path_var.get().strip())
-            if not pfx_path.exists():
-                messagebox.showerror("Atenção", "Por favor, selecione um arquivo de certificado .pfx válido.")
-                return
 
         excel_path = Path(self.excel_path_var.get().strip())
         if not excel_path.exists():
@@ -1880,8 +1759,6 @@ class FGTSDigitalApp(ctk.CTk):
                 return
 
             self.browser_manager = BrowserManager(
-                pfx_path=config["pfx_path"],
-                pfx_password=config["pfx_pass"],
                 headless=config["headless"],
                 downloads_path=output_dir
             )

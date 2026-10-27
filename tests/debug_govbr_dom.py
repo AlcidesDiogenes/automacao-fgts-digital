@@ -10,14 +10,10 @@ from src.core.browser import BrowserManager
 from config import settings
 
 def debug_govbr():
-    pfx_path = Path(settings.PFX_PATH)
-    pfx_pass = settings.PFX_PASSWORD
     output_dir = Path(settings.DEFAULT_OUTPUT_DIR)
 
-    print(f"Iniciando depuração com certificado: {pfx_path.name}")
+    print("Iniciando depuração com o certificado instalado no Windows")
     browser_mgr = BrowserManager(
-        pfx_path=pfx_path,
-        pfx_password=pfx_pass,
         headless=False,
         downloads_path=output_dir
     )

@@ -9,7 +9,7 @@ from src.core.browser import BrowserManager
 from config import settings
 
 def inspect_hcaptcha():
-    mgr = BrowserManager(Path(settings.PFX_PATH), settings.PFX_PASSWORD, headless=True)
+    mgr = BrowserManager(headless=True)
     try:
         p = mgr.iniciar()
         p.goto("https://fgtsdigital.sistema.gov.br/portal", wait_until="domcontentloaded")

@@ -24,6 +24,10 @@ data/*.xlsx
 data/*.xls
 data/*.csv
 data/*.db
+# Bancos SQLite em qualquer pasta (ex.: cópias do histórico do Chrome como h_copy.db).
+# O projeto não usa banco .db versionado — ver docs/decisoes/ADR-0005.
+*.db
+*.db-journal
 data/*_profile/
 data/browser_profile/
 data/chrome_profile/

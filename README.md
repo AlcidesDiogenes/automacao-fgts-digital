@@ -40,7 +40,7 @@ Sistema corporativo de alto desempenho desenvolvido para escritórios de contabi
 O fechamento mensal de encargos trabalhistas exige a apuração e geração de guias para dezenas ou centenas de empresas clientes. O portal do **FGTS Digital** demanda autenticação Gov.br via mTLS, troca manual de perfil por procuração outorgada e consultas individuais.
 
 A **Automação FGTS Digital Pro** elimina o trabalho manual repetitivo:
-1. Conecta-se com o Certificado Digital do contador (instalado no Windows ou via arquivo `.pfx`).
+1. Conecta-se com o Certificado Digital do contador instalado no Windows (A1 ou token A3).
 2. Lê a lista de empresas outorgantes (via planilha Excel ou diretamente do relatório em PDF do Sistema Domínio).
 3. Efetua a troca de perfil para cada cliente no portal via Procuração Eletrônica (SPE).
 4. Audita se o valor no FGTS Digital bate com o relatório de encargos (com suporte consolidado a FGTS Mensal e FGTS de empréstimo consignado).
@@ -66,9 +66,9 @@ O GIF acima ilustra as cinco etapas executadas de forma contínua pelo robô:
 
 ## 🚀 Principais Funcionalidades
 
-- **Duplo Modo de Certificado Digital**:
-  - *Certificado Instalado no Windows*: Acesso automático e transparente aos certificados A1/A3 instalados na máquina, sem necessidade de selecionar arquivo ou redigitar senhas.
-  - *Arquivo PFX/P12*: Carregamento seguro de arquivo físico com validação criptográfica de senha, titularidade e data de validade.
+- **Certificado Digital instalado no Windows**:
+  - Acesso automático aos certificados A1/A3 instalados na máquina, sem selecionar arquivo nem digitar senha no programa.
+  - O modo de certificado em arquivo `.pfx` foi removido em 27/10/2026: ele quebra o captcha do Gov.br ([ADR-0004](docs/decisoes/ADR-0004-remocao-do-modo-pfx.md)).
 - **Importador de Relatórios em PDF (Exclusivo Sistema Domínio)**:
   - Atualmente projetado para leitura e extração exclusiva do modelo de relatório em PDF gerado pelo **Sistema Domínio (Thomson Reuters)**.
   - Extração automática de CNPJs, Razões Sociais e consolidação precisa de encargos: **FGTS**, **FGTS 13°**, **Emp. Créd. Trab.** (Consignado Trabalhador Ativo) e **Emp. Créd. Tr. Resc.** (Consignado Rescindido).
@@ -98,7 +98,7 @@ A interface foi projetada seguindo diretrizes rígidas de ergonomia e confiabili
    - ⚙ **Painel de Controle**: Configuração da competência de apuração, opções de auditoria/emissão, seleção de pastas e armazenamento e acionamento do robô.
    - 📑 **Importar Relatório (PDF)**: Leitor inteligente do relatório de encargos do **Sistema Domínio** com visualização em tabela editável e exportação para Excel/PDF.
    - 📋 **Fila de Empresas**: Gestão da planilha de CNPJs carregados, contadores e status de execução.
-   - 🛠 **Parâmetros**: Gestão do Certificado Digital (Windows ou Arquivo A1/PFX), regras de leitura do PDF (FGTS Mensal, Consignado e Complementares) e personalização da nomenclatura dos documentos emitidos, com persistência automática em `config/parametros.json`.
+   - 🛠 **Parâmetros**: Informação do Certificado Digital (instalado no Windows), regras de leitura do PDF (FGTS Mensal, Consignado e Complementares) e personalização da nomenclatura dos documentos emitidos, com persistência automática em `config/parametros.json`.
    - 📜 **Logs & Auditoria**: Console com terminal em tempo real e monitoramento dos passos do robô.
 2. **Cards de Status e KPIs Executivos**:
    - **Empresas no Lote**: Quantidade de clientes na fila de processamento.
@@ -132,7 +132,7 @@ Em cenários reais do portal FGTS Digital, uma mesma competência pode apresenta
 flowchart TD
     A["📑 Relatório em PDF (Sistema Domínio)"] --> B["⚙️ Parser Especializado (FGTS + Consignado)"]
     B --> C["📋 Fila Consolidada de Empresas"]
-    C --> D["🔒 Conexão Segura Gov.br (mTLS Windows/PFX)"]
+    C --> D["🔒 Conexão Segura Gov.br (mTLS com certificado do Windows)"]
     D --> E["👥 Troca de Perfil Automática (SPE)"]
     E --> F{"🧠 Análise de Cards Mensais no Portal"}
     F -->|"Divergente / Residual (ex: R$ 23,45)"| G["❌ Descartado"]
@@ -193,18 +193,14 @@ Ativado marcando a opção **"Apenas conferir se o valor do relatório e do sist
 
 ## 🔐 Autenticação e Certificados Digitais
 
-O sistema oferece máxima flexibilidade de autenticação com o Gov.br:
+O robô autentica no Gov.br **somente com o certificado digital instalado no Windows** (A1 importado ou token A3):
 
-| Método | Como Funciona | Recomendado para |
-| :--- | :--- | :--- |
-| **Certificado Instalado (Windows)** | Abre o navegador conectado ao repositório nativo do Windows (mTLS transparente). | Contadores que já possuem o certificado A1 ou token A3 configurado no computador. |
-| **Arquivo PFX/P12** | O usuário seleciona o arquivo e digita a senha. O sistema valida o certificado (senha, validade, chave privada) e abre o **Chromium do Playwright** com o `.pfx` injetado via `client_certificates` nas origens do Gov.br e do FGTS Digital. Usa perfil próprio em `data/pfx_profile/`. | Ambientes onde o certificado não pode ser instalado de forma permanente no Windows. |
+1. Abre (ou reaproveita) o **Google Chrome do sistema** com perfil próprio em `data/browser_profile/` e o controla pela porta local 9222 ([ADR-0001](docs/decisoes/ADR-0001-chrome-nativo-cdp-porta-9222.md)).
+2. O Chrome faz o mTLS pela pilha nativa do Windows e seleciona o certificado automaticamente nas origens `*.acesso.gov.br` e `*.sistema.gov.br`.
+3. Se o Gov.br mostrar **captcha**, o robô avisa no log e espera até 4 minutos o operador resolver na janela.
+4. Sem Google Chrome instalado, usa o Chromium do Playwright com o mesmo repositório de certificados do Windows (reserva).
 
-> **Nota de Segurança**: A senha e o certificado são manipulados exclusivamente em memória e nunca transmitidos externamente.
->
-> **Por que o modo PFX não usa o Google Chrome?** O Chrome do sistema só enxerga certificados instalados no Windows; um arquivo `.pfx` só pode ser apresentado pelo Chromium controlado pelo Playwright. Por isso, no modo PFX a janela do Chrome na porta 9222 é ignorada.
->
-> ⚠️ O modo PFX foi validado com testes automatizados, mas **ainda não com o portal real** (falta um teste com um `.pfx` válido).
+> **Por que não há modo de certificado em arquivo (`.pfx`)?** No Playwright, a única forma de apresentar um `.pfx` sem instalá-lo no Windows é o `client_certificates`, que cria um proxy interno e bloqueia os serviços de captcha; o Gov.br então responde **ERL0033800 – "Captcha inválido"**. O modo foi removido em 27/10/2026 — [ADR-0004](docs/decisoes/ADR-0004-remocao-do-modo-pfx.md). Para usar um certificado A1 em arquivo, **instale-o no Windows** (duplo clique no `.pfx` → Usuário Atual).
 
 ---
 
@@ -250,7 +246,7 @@ Basta dar um duplo clique no executável em lote:
 - `iniciar_com_console.bat` (Abre a aplicação com janela de console auxiliar para depuração detalhada)
 
 ### Execução via Terminal (CLI)
-A linha de comando usa as mesmas preferências da interface (`config/parametros.json`: nomenclatura e "exigir valor esperado"). Sem `--pfx` (e sem `PFX_PATH` no `.env`), usa o certificado instalado no Windows.
+A linha de comando usa as mesmas preferências da interface (`config/parametros.json`: nomenclatura e "exigir valor esperado") e o certificado instalado no Windows.
 Você também pode disparar a automação diretamente por linha de comando:
 ```powershell
 # Execução da competência anterior
@@ -261,9 +257,6 @@ Você também pode disparar a automação diretamente por linha de comando:
 
 # Apenas conferir valores (não emite guias)
 .\venv\Scripts\python.exe main.py --cli --conferir --competencia 09/2026
-
-# Com certificado A1 em arquivo
-.\venv\Scripts\python.exe main.py --cli --pfx "C:\caminho\certificado.pfx" --senha "..." --competencia 09/2026
 ```
 
 ---
@@ -299,14 +292,14 @@ automacao-fgts-digital/
 │   ├── logs/                   # Logs de execução (ignorado no git)
 │   └── output/                 # Pastas de saída com PDFs e planilhas geradas
 ├── docs/
-│   └── assets/                 # Imagens, diagramas e GIFs do README
+│   ├── assets/                 # Imagens, diagramas e GIFs do README
+│   └── decisoes/               # Registro de decisões técnicas (ADR)
 ├── scripts/
 │   └── generate_assets.py      # Gerador automatizado de assets visuais
 ├── src/
-│   ├── core/                   # Módulos de apoio (Excel, certificados, navegação)
-│   │   ├── cert_manager.py     # Leitor e validador X.509 / PKCS#12
-│   │   ├── excel_manager.py    # Geração e leitura de planilhas de lote
-│   │   └── report_parser.py   # Parser de relatórios de folha e consignado
+│   ├── core/                   # Módulos de apoio (navegador e Excel)
+│   │   ├── browser.py          # Abertura/conexão do Chrome (CDP 9222) com certificado do Windows
+│   │   └── excel_manager.py    # Geração e leitura de planilhas de lote
 │   ├── modules/
 │   │   ├── fgts_digital/       # Robô de automação do portal federal
 │   │   │   ├── bot.py          # Lógica de navegação, troca de perfil e download
@@ -340,7 +333,7 @@ O projeto conta com testes unitários cobrindo o gerenciamento de certificados, 
 - `tests/test_validacao_pdf.py` gera PDFs sintéticos com `reportlab` e testa a validação de conteúdo.
 - `tests/test_bot_esperas.py` testa as esperas do robô (o `is_visible(timeout=...)` do Playwright ignora o timeout) e a detecção imediata de "sem débitos".
 - `tests/test_ui_execucao.py` abre a janela real com robô e navegador falsos: contadores, mensagem final, botão *Parar* e nenhuma alteração de widget fora da thread principal.
-- `tests/test_browser_modos.py` confere a escolha do navegador por modo de certificado (PFX injetado via `client_certificates`, sem CDP).
+- `tests/test_browser_modos.py` confere a abertura do navegador (reaproveitar o Chrome via CDP, reservas) e garante que **nenhum caminho usa `client_certificates`** (regressão do captcha, ADR-0004).
 - `tests/test_logger.py` garante que o arquivo `data/logs/execucao_AAAA-MM-DD.log` é criado.
 
 ---
@@ -349,7 +342,13 @@ O projeto conta com testes unitários cobrindo o gerenciamento de certificados, 
 
 * **Zero Exposição de Chaves**: Arquivos de certificados digitais (`.pfx`, `.p12`, `.pem`, `.key`, `.crt`) e arquivos `.env` com senhas estão permanentemente bloqueados pelo `.gitignore`.
 * **Privacidade dos Trabalhadores**: Nenhum relatório com dados de colaboradores (CPF, salários, bases de cálculo) é mantido em repositórios remotos.
-* **Isolamento de Sessão**: Cada execução limpa os dados temporários de navegação, preservando a segurança do certificado A1/A3.
+* **Sessão persistente (não é limpa a cada execução)**: o robô usa perfil próprio do Chrome em `data/browser_profile/` e **mantém a janela aberta** ao fim do lote para reaproveitar o login no Gov.br. O perfil guarda cookies de sessão e fica fora do Git.
+* **Porta de depuração 9222 — só em computador individual**: enquanto a janela do robô estiver aberta, qualquer programa **do mesmo computador** pode controlar a sessão de procurador por essa porta (ela não é acessível pela rede). Por isso o programa **não deve rodar em servidor compartilhado** (Terminal Server/RDS). Detalhes e alternativas em [ADR-0001](docs/decisoes/ADR-0001-chrome-nativo-cdp-porta-9222.md).
+* **Mascaramento de automação**: o navegador oculta sinais de automação para reduzir bloqueios do WAF do Gov.br; captchas são sempre resolvidos pelo operador. Riscos registrados em [ADR-0002](docs/decisoes/ADR-0002-mascaramento-de-automacao-stealth.md).
+* **Dados de navegador fora do repositório**: perfis, cookies e qualquer banco `*.db` (ex.: cópias de histórico do Chrome) são ignorados pelo Git em qualquer pasta — [ADR-0005](docs/decisoes/ADR-0005-dados-de-navegador-fora-do-repositorio.md).
+* **Sem senha de certificado no projeto**: o robô não lê mais `PFX_PATH`/`PFX_PASSWORD`. Se o seu `config/.env` ainda tiver essas linhas, apague-as.
+
+Todas as decisões técnicas: [docs/decisoes](docs/decisoes/README.md).
 
 ---
 

@@ -43,9 +43,6 @@ def resolver_caminho(caminho) -> Path:
     p = Path(str(caminho).strip())
     return p if p.is_absolute() else BASE_DIR / p
 
-# Configurações do Certificado
-PFX_PATH = os.getenv("PFX_PATH", "")
-PFX_PASSWORD = os.getenv("PFX_PASSWORD", "")
 
 # Configurações do Navegador
 HEADLESS = os.getenv("HEADLESS", "false").lower() in ("true", "1", "yes")

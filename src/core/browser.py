@@ -1,7 +1,8 @@
 """
 Módulo de inicialização e gerenciamento do navegador automatizado (Playwright).
-Modo certificado do Windows: Google Chrome via CDP (porta 9222) ou perfil persistente.
-Modo arquivo PFX: Chromium do Playwright com o .pfx injetado via client_certificates (mTLS).
+Usa o certificado instalado no Windows: Google Chrome via CDP (porta 9222) ou perfil persistente.
+Não injeta certificado por arquivo (.pfx): o client_certificates do Playwright quebra o captcha
+do Gov.br (ERL0033800) — ver docs/decisoes/ADR-0004.
 """
 
 import json
@@ -21,14 +22,10 @@ class BrowserManager:
 
     def __init__(
         self,
-        pfx_path: Optional[Path] = None,
-        pfx_password: str = "",
         headless: bool = False,
         timeout_seconds: int = 60,
         downloads_path: Optional[Path] = None
     ):
-        self.pfx_path = Path(pfx_path) if pfx_path and str(pfx_path).strip() else None
-        self.pfx_password = pfx_password or ""
         self.headless = headless
         self.timeout = timeout_seconds * 1000  # Playwright usa milissegundos
         self.downloads_path = downloads_path
@@ -38,31 +35,14 @@ class BrowserManager:
         self._context: Optional[BrowserContext] = None
         self._is_cdp: bool = False
 
-    # Origens do Gov.br/FGTS Digital que pedem certificado de cliente (mTLS)
-    ORIGENS_GOV = [
-        "https://sso.acesso.gov.br",
-        "https://certificado.sso.acesso.gov.br",
-        "https://certificados.acesso.gov.br",
-        "https://acesso.gov.br",
-        "https://contas.acesso.gov.br",
-        "https://confiabilidade.acesso.gov.br",
-        "https://fgtsdigital.sistema.gov.br"
-    ]
-
     USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
 
     def iniciar(self) -> Page:
         """
-        Inicializa o navegador conforme o modo de certificado:
-          - Arquivo PFX: Chromium do Playwright com o .pfx injetado via client_certificates
-            (o Chrome do sistema não aceita certificado por arquivo, então a janela via CDP é ignorada);
-          - Certificado do Windows: conecta/abre o Google Chrome na porta 9222 (CDP) e, se não
-            houver Chrome, usa perfil persistente com o repositório de certificados do Windows.
+        Conecta/abre o Google Chrome na porta 9222 (CDP) e, se não houver Chrome, usa perfil
+        persistente do Playwright com o repositório de certificados do Windows.
         """
         self._playwright = sync_playwright().start()
-
-        if self.pfx_path:
-            return self._iniciar_com_pfx()
 
         page = self._conectar_chrome_cdp()
         if page is not None:
@@ -118,7 +98,7 @@ class BrowserManager:
         ]
 
     def _iniciar_persistente_windows(self) -> Page:
-        """Perfil persistente usando o repositório de certificados do Windows (sem Chrome via CDP)."""
+        """Perfil persistente usando o repositório de certificados do Windows (reserva quando não há Chrome)."""
         logger.info(f"Iniciando navegador persistente padrão (Headless: {self.headless})...")
         logger.info("Utilizando Repositório Nativo de Certificados do Windows.")
         self._is_cdp = False
@@ -150,45 +130,8 @@ class BrowserManager:
         self._context = self._playwright.chromium.launch_persistent_context(**context_kwargs)
         return self._preparar_contexto()
 
-    def _iniciar_com_pfx(self) -> Page:
-        """Chromium do Playwright com o certificado A1 (.pfx) injetado nas origens do Gov.br."""
-        from src.auth.cert_manager import CertManager
-
-        if not self.pfx_path.exists():
-            raise FileNotFoundError(f"Arquivo do certificado não encontrado: {self.pfx_path}")
-        info = CertManager(str(self.pfx_path), self.pfx_password).inspecionar()
-        if not info.get("valido"):
-            raise ValueError(f"Certificado A1 inválido: {info.get('erro') or 'expirado ou sem chave privada'}")
-
-        logger.info(f"Modo Arquivo PFX: certificado de '{info.get('titular')}' injetado via Playwright (Chromium interno).")
-        self._is_cdp = False
-
-        # Perfil separado do Chrome do sistema (versões diferentes de navegador não devem dividir perfil)
-        user_data_dir = settings.DATA_DIR / "pfx_profile"
-        user_data_dir.mkdir(parents=True, exist_ok=True)
-
-        resolved_pfx = str(self.pfx_path.resolve())
-        client_certs = [
-            {"origin": origem, "pfxPath": resolved_pfx, "passphrase": self.pfx_password}
-            for origem in self.ORIGENS_GOV
-        ]
-
-        self._context = self._playwright.chromium.launch_persistent_context(
-            user_data_dir=str(user_data_dir),
-            headless=self.headless,
-            ignore_default_args=["--enable-automation"],
-            args=self._args_base(),
-            locale="pt-BR",
-            timezone_id="America/Sao_Paulo",
-            accept_downloads=True,
-            viewport=None,
-            user_agent=self.USER_AGENT,
-            client_certificates=client_certs,
-        )
-        return self._preparar_contexto()
-
     def _preparar_contexto(self) -> Page:
-        """Timeout padrão, mascaramento de automação e stealth no contexto persistente."""
+        """Timeout padrão, mascaramento de automação e stealth no contexto persistente (ADR-0002)."""
         self._context.set_default_timeout(self.timeout)
 
         # Mascara a propriedade navigator.webdriver para mitigar disparos do WAF do Gov.br
@@ -231,15 +174,11 @@ class BrowserManager:
 
 @contextmanager
 def sessao_navegador(
-    pfx_path: Path,
-    pfx_password: str,
     headless: bool = False,
     timeout_seconds: int = 60
 ) -> Generator[Page, None, None]:
     """Context manager para gerenciar o ciclo de vida do navegador automaticamente."""
     manager = BrowserManager(
-        pfx_path=pfx_path,
-        pfx_password=pfx_password,
         headless=headless,
         timeout_seconds=timeout_seconds
     )

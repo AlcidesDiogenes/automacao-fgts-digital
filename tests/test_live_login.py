@@ -16,14 +16,10 @@ from src.modules.fgts_digital.bot import FGTSDigitalBot
 from config import settings
 
 def testar_login_real():
-    pfx_path = Path(settings.PFX_PATH)
-    pfx_pass = settings.PFX_PASSWORD
     output_dir = Path(settings.DEFAULT_OUTPUT_DIR)
 
-    print(f"Testando com certificado: {pfx_path.name}")
+    print("Testando com o certificado instalado no Windows")
     browser_mgr = BrowserManager(
-        pfx_path=pfx_path,
-        pfx_password=pfx_pass,
         headless=False,
         downloads_path=output_dir
     )

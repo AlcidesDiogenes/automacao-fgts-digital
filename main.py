@@ -19,7 +19,6 @@ from config import settings
 
 def executar_modo_cli(args):
     """Executa a automação diretamente no terminal."""
-    from src.auth.cert_manager import CertManager
     from src.core.excel_manager import ExcelManager
     from src.core.browser import BrowserManager
     from src.modules.fgts_digital.bot import FGTSDigitalBot
@@ -27,9 +26,6 @@ def executar_modo_cli(args):
 
     logger.info("=== Iniciando Automação FGTS Digital via Linha de Comando ===")
 
-    pfx_arg = (args.pfx or settings.PFX_PATH or "").strip()
-    pfx_path = Path(pfx_arg) if pfx_arg else None
-    pfx_pass = args.senha or settings.PFX_PASSWORD
     excel_path = Path(args.excel or settings.DEFAULT_EXCEL_PATH)
     output_dir = settings.resolver_caminho(args.output) if args.output else settings.DEFAULT_OUTPUT_DIR
     competencia = calcular_competencia(args.competencia)
@@ -45,16 +41,8 @@ def executar_modo_cli(args):
     }
     exigir_valor_esperado = bool(parametros.get("emissao", {}).get("exigir_valor_esperado", True))
 
-    # 1. Certificado: arquivo PFX (se informado) ou repositório do Windows
-    if pfx_path:
-        cert_mgr = CertManager(str(pfx_path), pfx_pass)
-        info_cert = cert_mgr.inspecionar()
-        if not info_cert.get("valido"):
-            logger.error(f"Certificado inválido: {info_cert.get('erro')}")
-            sys.exit(1)
-        logger.info(f"Certificado: {info_cert['titular']} (Validade: {info_cert['validade']})")
-    else:
-        logger.info("Nenhum arquivo PFX informado: usando o certificado instalado no Windows.")
+    # 1. Certificado: sempre o instalado no Windows (modo .pfx removido — ADR-0004)
+    logger.info("Usando o certificado digital instalado no Windows.")
 
     # 2. Lê empresas
     if not excel_path.exists():
@@ -70,8 +58,6 @@ def executar_modo_cli(args):
 
     # 3. Execução do robô
     browser_mgr = BrowserManager(
-        pfx_path=pfx_path,
-        pfx_password=pfx_pass,
         headless=headless,
         downloads_path=output_dir
     )
@@ -102,8 +88,6 @@ def main():
     parser = argparse.ArgumentParser(description="Automações de Encargos - FGTS Digital")
     parser.add_argument("--cli", action="store_true", help="Executar em modo linha de comando (sem janela gráfica)")
     parser.add_argument("--competencia", default="anterior", help="Competência (ex: anterior, atual, ou MM/AAAA)")
-    parser.add_argument("--pfx", help="Caminho do certificado A1 (.pfx)")
-    parser.add_argument("--senha", help="Senha do certificado A1")
     parser.add_argument("--excel", help="Caminho da planilha de empresas (.xlsx)")
     parser.add_argument("--output", help="Pasta de saída para os arquivos")
     parser.add_argument("--headless", action="store_true", help="Executar navegador em segundo plano")
