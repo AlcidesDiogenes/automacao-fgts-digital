@@ -22,10 +22,10 @@ playwright install chromium
 | :--- | :--- |
 | Interface (duplo clique) | `iniciar.bat` (sem console) ou `iniciar_com_console.bat` (com console para depurar) |
 | Interface (terminal) | `.\venv\Scripts\python.exe main.py` |
-| Linha de comando | `.\venv\Scripts\python.exe main.py --cli --competencia 09/2026` |
-| Só conferir valores | `.\venv\Scripts\python.exe main.py --cli --conferir --competencia anterior` |
+| Linha de comando | `.\venv\Scripts\python.exe main.py --cli --competencia xx/xxxx` |
+| Só conferir valores | `.\venv\Scripts\python.exe main.py --cli --conferir --competencia xx/xxxx` |
 
-Opções da linha de comando: `--competencia` (`anterior`, `atual` ou `MM/AAAA`), `--excel` (planilha de empresas), `--output` (pasta de saída), `--headless`, `--conferir`. A linha de comando usa as mesmas preferências da interface (`config/parametros.json`).
+Opções da linha de comando: `--competencia xx/xxxx` (mês/ano, **obrigatória**; sem ela o programa sai com código 2, e com empresa de outra competência na planilha sai com código 3 — [ADR-0007](decisoes/ADR-0007-competencia-sempre-digitada.md)), `--excel` (planilha de empresas), `--output` (pasta de saída), `--headless`, `--conferir`. A linha de comando usa as mesmas preferências da interface (`config/parametros.json`).
 
 ## Configuração
 
@@ -92,7 +92,7 @@ Decisão registrada em [ADR-0006](decisoes/ADR-0006-fluxo-de-testes.md).
 ### Roteiro manual no portal real (antes de usar uma versão nova)
 
 1. `.\venv\Scripts\python.exe scripts\diagnostico\login_real.py` → esperado: `Resultado do Login: SUCESSO` (resolver captcha se aparecer).
-2. `main.py --cli --conferir --competencia <MM/AAAA> --excel <planilha com 3 empresas>` → esperado: 3 trocas de perfil confirmadas e status coerentes com o portal.
+2. `main.py --cli --conferir --competencia xx/xxxx --excel <planilha com 3 empresas>` → esperado: 3 trocas de perfil confirmadas e status coerentes com o portal.
 3. Emitir **uma** guia de empresa conhecida pela interface → esperado: status "Sucesso - Guia Emitida" e PDF aprovado na validação (nada em `_rejeitados/`).
 4. Registrar o resultado na nota do projeto (pasta Skills) e em [problemas conhecidos](problemas-conhecidos.md) se algo divergir.
 

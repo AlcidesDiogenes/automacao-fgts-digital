@@ -8,7 +8,7 @@ from src.modules.fgts_digital.parser import (
     limpar_cnpj,
     formatar_cnpj,
     validar_cnpj,
-    calcular_competencia,
+    normalizar_competencia,
     converter_valor_br,
     sanitizar_nome_arquivo
 )
@@ -35,20 +35,21 @@ def test_validar_cnpj():
     assert validar_cnpj("") is False
 
 
-def test_calcular_competencia():
-    # Mês de referência: Outubro de 2026
-    data_ref = datetime(2026, 10, 15)
+def test_normalizar_competencia_formatos_aceitos():
+    assert normalizar_competencia("09/2026") == "09/2026"
+    assert normalizar_competencia("9/2026") == "09/2026"
+    assert normalizar_competencia(" 09-2026 ") == "09/2026"
+    assert normalizar_competencia("09.2026") == "09/2026"
+    # Célula de data do Excel lida como texto
+    assert normalizar_competencia("2026-09-01 00:00:00") == "09/2026"
+    assert normalizar_competencia("2026-12-01") == "12/2026"
 
-    assert calcular_competencia("atual", data_ref) == "10/2026"
-    assert calcular_competencia("anterior", data_ref) == "09/2026"
 
-    # Virada de ano: Janeiro de 2027
-    data_jan = datetime(2027, 1, 10)
-    assert calcular_competencia("anterior", data_jan) == "12/2026"
-
-    # Competência customizada
-    assert calcular_competencia("05/2026", data_ref) == "05/2026"
-    assert calcular_competencia("05-2026", data_ref) == "05/2026"
+def test_normalizar_competencia_rejeita_invalidas():
+    # "anterior"/"atual" não são mais aceitos: a competência é sempre digitada
+    for invalida in ("", None, "anterior", "atual", "13/2026", "00/2026", "2026/09", "09/26",
+                     "setembro/2026", "09/1999", "09/2101", "nan"):
+        assert normalizar_competencia(invalida) is None, invalida
 
 
 def test_converter_valor_br():

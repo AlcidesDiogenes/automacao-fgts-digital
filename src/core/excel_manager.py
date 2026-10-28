@@ -11,7 +11,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
-from src.modules.fgts_digital.parser import limpar_cnpj, formatar_cnpj, validar_cnpj
+from src.modules.fgts_digital.parser import limpar_cnpj, formatar_cnpj, validar_cnpj, normalizar_competencia
 from src.utils.logger import logger
 
 
@@ -141,6 +141,16 @@ class ExcelManager:
 
         logger.info(f"Carregadas {len(empresas)} empresas do arquivo {caminho.name}.")
         return empresas
+
+    @staticmethod
+    def competencias_divergentes(empresas: List[Dict[str, Any]], competencia: str) -> List[Dict[str, Any]]:
+        """
+        Empresas da fila cuja competência (vinda da planilha) não é a competência digitada.
+        Valores que não são uma competência válida também contam como divergentes.
+        O robô não inicia se houver alguma (docs/decisoes/ADR-0007).
+        """
+        alvo = normalizar_competencia(competencia)
+        return [e for e in empresas if normalizar_competencia(e.get("competencia")) != alvo]
 
     @staticmethod
     def gerar_relatorio_execucao(

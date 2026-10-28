@@ -217,7 +217,11 @@ def main():
     print("-> Executando lote simulado para o GIF...")
     app._navegar_para("painel")
     esperar(app, 0.5)
+    # A competência é obrigatória (ADR-0007): digitada só para iniciar o lote simulado e apagada
+    # em seguida (a opção já foi lida), para que as imagens mostrem o campo vazio ("xx/xxxx").
+    app.comp_manual_var.set("09/2026")
     app._iniciar_execucao()
+    app.comp_manual_var.set("")
     fim = time.time() + 60
     while app.is_running and time.time() < fim:
         esperar(app, 0.7)

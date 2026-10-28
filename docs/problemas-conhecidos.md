@@ -30,4 +30,5 @@ Atualizado em 28/10/2026. Status: **aberto**, **mitigado** (risco reduzido, não
 | 27/10/2026 | Modo PFX quebrava o captcha | `client_certificates` do Playwright bloqueia os serviços de captcha (ERL0033800) | Modo removido ([ADR-0004](decisoes/ADR-0004-remocao-do-modo-pfx.md)) |
 | 28/10/2026 | Janela podia congelar durante o lote | Listener de log chamava `after()` da thread do robô segurando a trava do log | Fila única da interface |
 | 28/10/2026 | Suíte travava ~50% das vezes | `quit()` dentro do `update()` interno do 1º `CTk.mainloop()` era descartado | Testes usam laço de `update()` |
+| 28/10/2026 | Competência inválida digitada em "Manual" virava, em silêncio, o mês anterior; planilha de outro mês era processada sem aviso | `calcular_competencia` tinha fallback para "anterior"; competência da planilha tinha prioridade | Competência sempre digitada e validada; planilha divergente bloqueia ([ADR-0007](decisoes/ADR-0007-competencia-sempre-digitada.md)) |
 | 28/10/2026 | Teste do leitor do Domínio usava PDF real de clientes | — | PDF sintético no mesmo layout ([ADR-0006](decisoes/ADR-0006-fluxo-de-testes.md)) |

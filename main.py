@@ -22,13 +22,17 @@ def executar_modo_cli(args):
     from src.core.excel_manager import ExcelManager
     from src.core.browser import BrowserManager
     from src.modules.fgts_digital.bot import FGTSDigitalBot
-    from src.modules.fgts_digital.parser import calcular_competencia
+    from src.modules.fgts_digital.parser import normalizar_competencia
 
     logger.info("=== Iniciando Automação FGTS Digital via Linha de Comando ===")
 
     excel_path = Path(args.excel or settings.DEFAULT_EXCEL_PATH)
     output_dir = settings.resolver_caminho(args.output) if args.output else settings.DEFAULT_OUTPUT_DIR
-    competencia = calcular_competencia(args.competencia)
+    # Competência sempre informada pelo usuário, sem valor padrão (ADR-0007)
+    competencia = normalizar_competencia(args.competencia)
+    if not competencia:
+        logger.error("Informe a competência com --competencia xx/xxxx (mês/ano).")
+        sys.exit(2)
     headless = args.headless or settings.HEADLESS
 
     # Mesmas preferências da interface (config/parametros.json)
@@ -55,6 +59,15 @@ def executar_modo_cli(args):
     if not empresas:
         logger.warning("Nenhuma empresa encontrada na planilha.")
         sys.exit(0)
+
+    # A planilha não pode trazer empresa de outra competência (evita conferir/emitir o mês errado)
+    divergentes = ExcelManager.competencias_divergentes(empresas, competencia)
+    if divergentes:
+        logger.error(f"Competência informada: {competencia}. {len(divergentes)} empresa(s) da planilha estão com outra competência:")
+        for e in divergentes:
+            logger.error(f"  {e['cnpj_formatado']} - {e['competencia'] or '(vazia)'}")
+        logger.error("Corrija a planilha ou a competência informada. O robô não foi iniciado.")
+        sys.exit(3)
 
     # 3. Execução do robô
     browser_mgr = BrowserManager(
@@ -84,16 +97,19 @@ def executar_modo_cli(args):
         browser_mgr.fechar()
 
 
-def main():
+def criar_parser_argumentos() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Automações de Encargos - FGTS Digital")
     parser.add_argument("--cli", action="store_true", help="Executar em modo linha de comando (sem janela gráfica)")
-    parser.add_argument("--competencia", default="anterior", help="Competência (ex: anterior, atual, ou MM/AAAA)")
+    parser.add_argument("--competencia", help="Competência a conferir/emitir, obrigatória na linha de comando (xx/xxxx: mês/ano)")
     parser.add_argument("--excel", help="Caminho da planilha de empresas (.xlsx)")
     parser.add_argument("--output", help="Pasta de saída para os arquivos")
     parser.add_argument("--headless", action="store_true", help="Executar navegador em segundo plano")
     parser.add_argument("--conferir", action="store_true", help="Apenas conferir valores no portal, sem emitir guias")
+    return parser
 
-    args = parser.parse_args()
+
+def main():
+    args = criar_parser_argumentos().parse_args()
 
     # Configura logs em arquivo na pasta data/logs
     setup_logger(log_dir=settings.LOGS_DIR)

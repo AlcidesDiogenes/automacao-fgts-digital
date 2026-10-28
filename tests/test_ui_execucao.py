@@ -74,7 +74,10 @@ def _janela(tmp_path_factory):
     except Exception as e:  # sem display disponível
         mp.undo()
         pytest.skip(f"Tk indisponível: {e}")
+    janela.competencia_ao_abrir = janela.comp_manual_var.get()  # registrado antes de qualquer teste
     janela.excel_path_var.set(str(planilha))
+    janela.planilha_padrao = str(planilha)
+    janela.pasta_testes = pasta
     janela.output_dir_var.set(str(pasta / "saida"))
     janela.mensagens = mensagens
     yield janela
@@ -88,6 +91,8 @@ def app(_janela):
     _janela.mensagens.clear()
     _janela.progress_bar.set(0)
     _janela.lbl_progresso.configure(text="")
+    _janela.excel_path_var.set(_janela.planilha_padrao)
+    _janela.comp_manual_var.set("09/2026")  # a competência é sempre digitada (ADR-0007)
     yield _janela
 
 
@@ -235,3 +240,92 @@ def test_logs_simultaneos_das_duas_threads_nao_travam_e_chegam_a_tela(app):
             break
         time.sleep(0.02)
     assert estado["fim"], "nem todas as linhas de log chegaram à tela em 20 s"
+
+
+# ---------------------------------------------------------------------------
+# Competência sempre digitada (ADR-0007)
+# ---------------------------------------------------------------------------
+
+def test_campo_de_competencia_abre_vazio_e_sem_opcoes_anterior_atual(_janela):
+    assert _janela.competencia_ao_abrir == ""
+    assert not hasattr(_janela, "comp_tipo_var")
+    textos = []
+    pilha = [_janela]
+    while pilha:
+        w = pilha.pop()
+        pilha.extend(w.winfo_children())
+        try:
+            textos.append(str(w.cget("text")))
+        except Exception:
+            pass
+    assert not any(t.startswith(("Anterior", "Atual")) for t in textos)
+
+
+@pytest.mark.parametrize("digitado", ["", "anterior", "13/2026", "2026/09"])
+def test_nao_inicia_sem_competencia_valida(app, monkeypatch, digitado):
+    monkeypatch.setattr(app_mod, "FGTSDigitalBot", fabrica_robo({}))
+    app.comp_manual_var.set(digitado)
+    app._iniciar_execucao()
+    assert app.is_running is False
+    tipo, titulo, msg = app.mensagens[-1]
+    assert tipo == "erro" and "xx/xxxx" in msg
+
+
+def test_nao_inicia_com_planilha_de_outra_competencia(app, monkeypatch):
+    import pandas as pd
+    planilha = app.pasta_testes / "divergente.xlsx"
+    pd.DataFrame(
+        [["11444777000161", "ALFA COMERCIO FICTICIO LTDA", "09/2026"],
+         ["33222111000130", "GAMA INDUSTRIA MODELO S/A", "08/2026"]],
+        columns=["CNPJ", "Razao_Social", "Competencia"],
+    ).to_excel(planilha, index=False)
+    monkeypatch.setattr(app_mod, "FGTSDigitalBot", fabrica_robo({}))
+    app.excel_path_var.set(str(planilha))
+    app.comp_manual_var.set("09/2026")
+    app._iniciar_execucao()
+    assert app.is_running is False
+    tipo, titulo, msg = app.mensagens[-1]
+    assert tipo == "erro" and "33.222.111/0001-30" in msg and "08/2026" in msg
+
+
+def test_competencia_digitada_e_normalizada_e_usada_no_lote(app, monkeypatch):
+    usadas = []
+    Robo = fabrica_robo({})
+    original = Robo.emitir_guia_e_relatorios
+
+    def emitir_registrando(self, cnpj, razao, comp, **kwargs):
+        usadas.append(comp)
+        return original(self, cnpj, razao, comp, **kwargs)
+
+    Robo.emitir_guia_e_relatorios = emitir_registrando
+    monkeypatch.setattr(app_mod, "FGTSDigitalBot", Robo)
+    app.comp_manual_var.set("9-2026")
+    app._iniciar_execucao()
+    _rodar_ate_terminar(app)
+    assert usadas and set(usadas) == {"09/2026"}
+    assert app.mensagens[-1][0] == "info"
+
+
+def test_campo_vazio_exibe_xx_xxxx(app):
+    # O placeholder do CTkEntry só aparece sem textvariable: confere o texto realmente exibido
+    app.comp_manual_var.set("")
+    app.focus_set()
+    app.update()
+    assert app.entry_comp_manual.get() == ""             # valor lido pelo programa
+    assert app.entry_comp_manual._entry.get() == "xx/xxxx"  # texto exibido no campo
+
+
+def test_campo_e_variavel_sincronizados(app):
+    app.comp_manual_var.set("09/2026")
+    app.update()
+    assert app.entry_comp_manual.get() == "09/2026"
+    campo = app.entry_comp_manual._entry  # o campo de texto real é o widget interno do CTkEntry
+    campo.focus_force()
+    app.update()
+    app.entry_comp_manual.delete(0, "end")
+    app.entry_comp_manual.insert(0, "10/2026")
+    campo.event_generate("<KeyRelease>", keysym="6")  # Tk entrega teclas ao widget com foco
+    app.update()
+    assert app.comp_manual_var.get() == "10/2026"
+    app.focus_set()
+    app.update()

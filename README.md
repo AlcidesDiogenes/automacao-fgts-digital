@@ -117,7 +117,7 @@ Ilustração (não é captura do portal, para não expor dados de clientes) das 
 Imagens geradas da interface real com dados fictícios por `scripts/capturar_telas.py`.
 
 1. **Sidebar Lateral de Navegação**:
-   - ⚙ **Painel de Controle**: Configuração da competência de apuração, opções de auditoria/emissão, seleção de pastas e armazenamento e acionamento do robô.
+   - ⚙ **Painel de Controle**: Competência digitada pelo usuário (xx/xxxx, obrigatória), opções de auditoria/emissão, seleção de pastas e armazenamento e acionamento do robô.
    - 📑 **Importar Relatório (PDF)**: Leitor inteligente do relatório de encargos do **Sistema Domínio** com visualização em tabela editável e exportação para Excel/PDF.
    - 📋 **Fila de Empresas**: Gestão da planilha de CNPJs carregados, contadores e status de execução.
    - 🛠 **Parâmetros**: Informação do Certificado Digital (instalado no Windows), regras de leitura do PDF (FGTS Mensal, Consignado e Complementares) e personalização da nomenclatura dos documentos emitidos, com persistência automática em `config/parametros.json`.
@@ -193,7 +193,7 @@ Documentação completa em [`docs/`](docs/README.md):
 Para cada empresa da lista:
 1. Alterna o perfil do usuário logado para o CNPJ do cliente.
 2. Acessa a opção **Gestão de Guias** > **Emissão de Guia Rápida**.
-3. Seleciona a competência de apuração.
+3. Usa a competência **digitada** pelo usuário (xx/xxxx). Não há competência padrão: sem ela, ou com empresa de outra competência na planilha, o robô não inicia ([ADR-0007](docs/decisoes/ADR-0007-competencia-sempre-digitada.md)).
 4. Emite a **GFD** e efetua o download do PDF.
 5. Emite e baixa o **Relatório Analítico de Débitos** (FGTS e Consignado).
 6. Salva e renomeia os arquivos na pasta da competência.
@@ -284,14 +284,11 @@ Basta dar um duplo clique no executável em lote:
 A linha de comando usa as mesmas preferências da interface (`config/parametros.json`: nomenclatura e "exigir valor esperado") e o certificado instalado no Windows.
 Você também pode disparar a automação diretamente por linha de comando:
 ```powershell
-# Execução da competência anterior
-.\venv\Scripts\python.exe main.py --cli --competencia anterior
-
 # Execução com competência específica
-.\venv\Scripts\python.exe main.py --cli --competencia 09/2026
+.\venv\Scripts\python.exe main.py --cli --competencia xx/xxxx
 
 # Apenas conferir valores (não emite guias)
-.\venv\Scripts\python.exe main.py --cli --conferir --competencia 09/2026
+.\venv\Scripts\python.exe main.py --cli --conferir --competencia xx/xxxx
 ```
 
 ---

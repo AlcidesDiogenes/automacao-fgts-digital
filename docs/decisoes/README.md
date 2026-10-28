@@ -12,6 +12,7 @@ Cada decisão técnica relevante tem um arquivo `ADR-NNNN-titulo.md` com context
 | [ADR-0004](ADR-0004-remocao-do-modo-pfx.md) | Remoção do modo de certificado em arquivo (.pfx) | Aceita | 27/10/2026 |
 | [ADR-0005](ADR-0005-dados-de-navegador-fora-do-repositorio.md) | Dados de navegador e bancos locais fora do repositório | Aceita | 27/10/2026 |
 | [ADR-0006](ADR-0006-fluxo-de-testes.md) | Fluxo de testes: automáticos sem portal real e só com dados fictícios | Aceita | 28/10/2026 |
+| [ADR-0007](ADR-0007-competencia-sempre-digitada.md) | Competência sempre digitada pelo usuário | Aceita | 28/10/2026 |
 
 ## Modelo
 

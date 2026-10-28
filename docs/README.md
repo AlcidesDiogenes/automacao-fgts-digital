@@ -16,3 +16,4 @@
 - [ADR-0004](decisoes/ADR-0004-remocao-do-modo-pfx.md) — Remoção do modo de certificado em arquivo
 - [ADR-0005](decisoes/ADR-0005-dados-de-navegador-fora-do-repositorio.md) — Dados de navegador fora do repositório
 - [ADR-0006](decisoes/ADR-0006-fluxo-de-testes.md) — Fluxo de testes
+- [ADR-0007](decisoes/ADR-0007-competencia-sempre-digitada.md) — Competência sempre digitada pelo usuário

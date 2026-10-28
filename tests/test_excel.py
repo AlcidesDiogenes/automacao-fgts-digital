@@ -120,3 +120,34 @@ def test_gerar_relatorio_conferencia(tmp_path):
     assert rel_path.name.startswith("Relatorio_FGTS_Digital_")
     assert not list(tmp_path.glob("DIVERGENCIAS_FGTS_*.xlsx"))
 
+
+
+def _planilha(destino, linhas):
+    import pandas as pd
+    pd.DataFrame(linhas, columns=["CNPJ", "Razao_Social", "Competencia"]).to_excel(destino, index=False)
+    return destino
+
+
+def test_competencias_divergentes_lista_so_as_diferentes(tmp_path):
+    caminho = _planilha(tmp_path / "fila.xlsx", [
+        ["11444777000161", "ALFA COMERCIO FICTICIO LTDA", "09/2026"],
+        ["22333444000181", "BETA SERVICOS EXEMPLO LTDA", ""],          # sem competência: usa a digitada
+        ["33222111000130", "GAMA INDUSTRIA MODELO S/A", "08/2026"],    # diferente
+        ["44555666000102", "DELTA TRANSPORTES TESTE LTDA", "9/2026"],  # mesmo mês, outro formato
+    ])
+    empresas = ExcelManager.ler_empresas(caminho, competencia_padrao="09/2026")
+    divergentes = ExcelManager.competencias_divergentes(empresas, "09/2026")
+    assert [(e["cnpj"], e["competencia"]) for e in divergentes] == [("33222111000130", "08/2026")]
+
+
+def test_competencias_divergentes_trata_valor_invalido_como_divergente(tmp_path):
+    caminho = _planilha(tmp_path / "fila.xlsx", [["11444777000161", "ALFA COMERCIO FICTICIO LTDA", "setembro"]])
+    empresas = ExcelManager.ler_empresas(caminho, competencia_padrao="09/2026")
+    assert len(ExcelManager.competencias_divergentes(empresas, "09/2026")) == 1
+
+
+def test_competencia_em_celula_de_data_do_excel(tmp_path):
+    import datetime as dt
+    caminho = _planilha(tmp_path / "fila.xlsx", [["11444777000161", "ALFA COMERCIO FICTICIO LTDA", dt.datetime(2026, 9, 1)]])
+    empresas = ExcelManager.ler_empresas(caminho, competencia_padrao="09/2026")
+    assert ExcelManager.competencias_divergentes(empresas, "09/2026") == []

@@ -60,6 +60,7 @@ flowchart LR
 
 ```mermaid
 flowchart TD
+    Z[Competência digitada xx/xxxx<br/>e planilha da mesma competência] --> A
     A[Empresa da fila] --> B{Troca de perfil<br/>confirmada?}
     B -- não --> X1[Perfil não confirmado /<br/>Erro de Procuração]
     B -- sim --> C[Guia Rápida: competência + Pesquisar]

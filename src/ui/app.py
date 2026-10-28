@@ -20,7 +20,7 @@ import customtkinter as ctk
 from src.core.excel_manager import ExcelManager
 from src.core.browser import BrowserManager
 from src.modules.fgts_digital.bot import FGTSDigitalBot
-from src.modules.fgts_digital.parser import calcular_competencia, limpar_cnpj, formatar_cnpj, validar_cnpj
+from src.modules.fgts_digital.parser import normalizar_competencia, limpar_cnpj, formatar_cnpj, validar_cnpj
 from src.modules.folha_relatorio.parser_pdf import RelatorioFolhaParser
 from src.utils.logger import logger, add_log_listener, remove_log_listener
 from src.ui.theme import CORES, RAIO, FONTE_FAMILIA, FONTE_MONO
@@ -64,8 +64,7 @@ class FGTSDigitalApp(ctk.CTk):
         # Carrega parâmetros persistidos em config/parametros.json
         self._carregar_parametros()
 
-        # Competência
-        self.comp_tipo_var = tk.StringVar(value="anterior")
+        # Competência: sempre digitada pelo usuário, sem valor padrão (ADR-0007)
         self.comp_manual_var = tk.StringVar()
 
         # Importação de Relatório de Folha (PDF)
@@ -513,20 +512,22 @@ class FGTSDigitalApp(ctk.CTk):
         comp_box = ctk.CTkFrame(card_params, fg_color="transparent")
         comp_box.grid(row=1, column=1, columnspan=3, padx=5, pady=6, sticky="w")
 
-        comp_ant = calcular_competencia("anterior")
-        comp_atual = calcular_competencia("atual")
-
-        rb_ant = ctk.CTkRadioButton(comp_box, text=f"Anterior (Padrão: {comp_ant})", variable=self.comp_tipo_var, value="anterior", command=self._ao_alterar_competencia)
-        rb_ant.pack(side="left", padx=(0, 10))
-
-        rb_atual = ctk.CTkRadioButton(comp_box, text=f"Atual ({comp_atual})", variable=self.comp_tipo_var, value="atual", command=self._ao_alterar_competencia)
-        rb_atual.pack(side="left", padx=10)
-
-        rb_manual = ctk.CTkRadioButton(comp_box, text="Manual:", variable=self.comp_tipo_var, value="manual", command=self._ao_alterar_competencia)
-        rb_manual.pack(side="left", padx=(10, 4))
-
-        self.entry_comp_manual = ctk.CTkEntry(comp_box, textvariable=self.comp_manual_var, width=80, placeholder_text="09/2026")
+        # Sem textvariable: com ela o CTkEntry não exibe o placeholder. O campo e
+        # self.comp_manual_var são sincronizados manualmente nos dois sentidos.
+        self.entry_comp_manual = ctk.CTkEntry(comp_box, width=110, placeholder_text="xx/xxxx")
         self.entry_comp_manual.pack(side="left")
+        self.entry_comp_manual.bind("<KeyRelease>", lambda _e: self._competencia_digitada_no_campo())
+        self.entry_comp_manual.bind("<FocusOut>", lambda _e: self._ao_alterar_competencia())
+        self.entry_comp_manual.bind("<Return>", lambda _e: self._ao_alterar_competencia())
+        self.comp_manual_var.trace_add("write", lambda *_: self._mostrar_competencia_no_campo())
+
+        lbl_comp_dica = ctk.CTkLabel(
+            comp_box,
+            text="Obrigatório — digite a competência que será conferida/emitida (xx/xxxx)",
+            font=ctk.CTkFont(size=11),
+            text_color="#94A3B8"
+        )
+        lbl_comp_dica.pack(side="left", padx=(10, 0))
 
         # Pasta onde salvar os arquivos emitidos
         lbl_out = ctk.CTkLabel(card_params, text="Salvar Arquivos em:", font=ctk.CTkFont(size=12))
@@ -1693,12 +1694,29 @@ class FGTSDigitalApp(ctk.CTk):
     def _limpar_logs(self):
         self.txt_logs.delete("1.0", "end")
 
+    def _competencia_digitada_no_campo(self):
+        """Campo -> variável (a cada tecla)."""
+        texto = self.entry_comp_manual.get()
+        if texto != self.comp_manual_var.get():
+            self.comp_manual_var.set(texto)
+
+    def _mostrar_competencia_no_campo(self):
+        """Variável -> campo (quando a competência é definida pelo código). Vazio mostra 'xx/xxxx'."""
+        valor = self.comp_manual_var.get()
+        campo = self.entry_comp_manual
+        if campo.get() != valor:
+            campo.delete(0, "end")
+            if valor:
+                campo.insert(0, valor)
+            elif self.focus_get() is not campo._entry:
+                # O CTkEntry começa com _is_focused=True e só volta a exibir o placeholder
+                # após um FocusOut; aqui usamos o foco real da janela para reexibir "xx/xxxx".
+                campo._is_focused = False
+                campo._activate_placeholder()
+
     def _obter_competencia_selecionada(self) -> str:
-        tipo = self.comp_tipo_var.get()
-        if tipo == "manual":
-            manual = self.comp_manual_var.get().strip()
-            return calcular_competencia(manual)
-        return calcular_competencia(tipo)
+        """Competência digitada, normalizada para MM/AAAA; vazio se ainda não for válida."""
+        return normalizar_competencia(self.comp_manual_var.get()) or ""
 
     # -------------------------------------------------------------------------
     # EXECUÇÃO DO ROBÔ (WORKER THREAD)
@@ -1735,9 +1753,36 @@ class FGTSDigitalApp(ctk.CTk):
             self.btn_iniciar.configure(text="Cancelando...", state="disabled")
             return
 
+        competencia = normalizar_competencia(self.comp_manual_var.get())
+        if not competencia:
+            messagebox.showerror(
+                "Competência obrigatória",
+                "Digite a competência que será conferida/emitida no formato xx/xxxx (mês/ano)."
+            )
+            return
+
         excel_path = Path(self.excel_path_var.get().strip())
         if not excel_path.exists():
             messagebox.showerror("Atenção", "A planilha de empresas informada não existe.")
+            return
+
+        # A planilha não pode trazer empresa de outra competência (evita conferir/emitir o mês errado)
+        try:
+            empresas = ExcelManager.ler_empresas(excel_path, competencia_padrao=competencia)
+        except Exception as e:
+            messagebox.showerror("Atenção", f"Não foi possível ler a planilha de empresas:\n{e}")
+            return
+        divergentes = ExcelManager.competencias_divergentes(empresas, competencia)
+        if divergentes:
+            linhas = [f"• {e['cnpj_formatado']} — {e['competencia'] or '(vazia)'}" for e in divergentes[:10]]
+            if len(divergentes) > 10:
+                linhas.append(f"• ... e mais {len(divergentes) - 10}")
+            messagebox.showerror(
+                "Competência diferente na planilha",
+                f"A competência digitada é {competencia}, mas {len(divergentes)} empresa(s) da planilha "
+                f"estão com outra competência:\n\n" + "\n".join(linhas) +
+                "\n\nCorrija a planilha ou a competência digitada. O robô não foi iniciado."
+            )
             return
 
         config = self._coletar_config_execucao()

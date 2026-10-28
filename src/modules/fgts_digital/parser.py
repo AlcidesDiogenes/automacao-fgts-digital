@@ -1,10 +1,9 @@
 """
 Módulo de tratamento e formatação de dados para o FGTS Digital.
-Inclui sanitização de CNPJ, cálculos de competência e formatação de valores.
+Inclui sanitização de CNPJ, validação de competência e formatação de valores.
 """
 
 import re
-from datetime import datetime
 from typing import Tuple, Optional
 
 
@@ -40,40 +39,26 @@ def validar_cnpj(cnpj: str) -> bool:
     return True
 
 
-def calcular_competencia(tipo: str = "anterior", data_referencia: Optional[datetime] = None) -> str:
+def normalizar_competencia(valor) -> Optional[str]:
     """
-    Calcula a competência no formato MM/AAAA.
-    - 'anterior': Mês anterior ao de referência (padrão de fechamento da folha)
-    - 'atual': Mês corrente
-    - Customizado: Se for passado no formato MM/AAAA ou MM-AAAA, padroniza.
+    Converte a competência digitada (ou lida da planilha) para "MM/AAAA".
+    Aceita MM/AAAA, M/AAAA, MM-AAAA, MM.AAAA e data do Excel lida como texto
+    ("AAAA-MM-DD" ou "AAAA-MM-DD hh:mm:ss"). Retorna None se for inválida.
+    Não existe mais competência implícita ("anterior"/"atual"): o usuário sempre
+    digita a competência (docs/decisoes/ADR-0007).
     """
-    ref = data_referencia or datetime.now()
-
-    tipo_limpo = tipo.strip().lower()
-
-    if tipo_limpo == "atual":
-        return ref.strftime("%m/%Y")
-
-    if tipo_limpo == "anterior":
-        # Se for janeiro, mês anterior é dezembro do ano passado
-        if ref.month == 1:
-            mes = 12
-            ano = ref.year - 1
-        else:
-            mes = ref.month - 1
-            ano = ref.year
-        return f"{mes:02d}/{ano}"
-
-    # Se for uma string com formato personalizado (ex: 08/2026 ou 08-2026)
-    match = re.match(r"^(\d{1,2})[/-](\d{4})$", tipo_limpo)
-    if match:
-        mes_val = int(match.group(1))
-        ano_val = int(match.group(2))
-        if 1 <= mes_val <= 12 and 2000 <= ano_val <= 2100:
-            return f"{mes_val:02d}/{ano_val}"
-
-    # Fallback para o mês anterior caso formato seja inválido
-    return calcular_competencia("anterior", ref)
+    texto = str(valor if valor is not None else "").strip()
+    m = re.fullmatch(r"(\d{1,2})[/.-](\d{4})", texto)
+    if m:
+        mes, ano = int(m.group(1)), int(m.group(2))
+    else:
+        m = re.fullmatch(r"(\d{4})-(\d{2})-(\d{2})(?:[ T]\d{2}:\d{2}:\d{2})?", texto)
+        if not m:
+            return None
+        ano, mes = int(m.group(1)), int(m.group(2))
+    if not (1 <= mes <= 12 and 2000 <= ano <= 2100):
+        return None
+    return f"{mes:02d}/{ano}"
 
 
 def sanitizar_nome_arquivo(nome: str) -> str:
