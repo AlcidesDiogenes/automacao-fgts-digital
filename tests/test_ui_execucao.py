@@ -93,21 +93,20 @@ def app(_janela):
 
 def _rodar_ate_terminar(janela, limite_s=30, ao_tick=None):
     """
-    Roda o mainloop real (o Tkinter só aceita after() de outras threads com o mainloop ativo)
-    até a execução terminar ou estourar o limite.
+    Processa os eventos da janela (update) até a execução terminar ou estourar o limite.
+
+    Não usa mainloop()+quit(): na 1ª chamada em uma janela, o CTk.mainloop() do CustomTkinter
+    executa um update() interno (cor da barra de título no Windows) antes de entrar no laço; um
+    quit() disparado ali dentro era descartado, porque o mainloop do Tkinter zera o pedido de saída
+    ao iniciar -> travamento intermitente da suíte (28/10/2026). Como a thread do robô só usa a
+    fila da interface (não chama o Tkinter), o update() na thread principal é suficiente.
     """
     fim = time.time() + limite_s
-
-    def checar():
+    while janela.is_running and time.time() < fim:
         if ao_tick:
             ao_tick()
-        if not janela.is_running or time.time() > fim:
-            janela.quit()
-        else:
-            janela.after(50, checar)
-
-    janela.after(50, checar)
-    janela.mainloop()
+        janela.update()
+        time.sleep(0.02)
     janela.update()
     assert not janela.is_running, "a execução não terminou"
 
@@ -163,3 +162,76 @@ def test_widgets_so_sao_alterados_na_thread_principal(app, monkeypatch):
     app._iniciar_execucao()
     _rodar_ate_terminar(app)
     assert chamadas_fora == []
+
+
+# ---------------------------------------------------------------------------
+# Regressão do travamento (28/10/2026): a thread do robô escrevia no log, o
+# handler da tela chamava self.after() (que, vindo de outra thread, ESPERA a
+# thread principal) segurando a trava do logging; a thread principal, ao
+# mesmo tempo, tentava escrever no log e esperava a mesma trava -> deadlock.
+# Regra: nenhuma chamada ao Tkinter pode partir de outra thread.
+# ---------------------------------------------------------------------------
+
+def _vigiar_after(app, monkeypatch):
+    principal = threading.main_thread()
+    chamadas_fora = []
+    original = app.after
+
+    def after_vigiado(*a, **k):
+        if threading.current_thread() is not principal:
+            chamadas_fora.append(threading.current_thread().name)
+            return None  # não encaminha ao Tk: chamá-lo fora da thread principal é o defeito
+        return original(*a, **k)
+
+    monkeypatch.setattr(app, "after", after_vigiado)
+    return chamadas_fora
+
+
+def _em_outra_thread(funcao):
+    t = threading.Thread(target=funcao, name="robo-teste", daemon=True)
+    t.start()
+    t.join(timeout=10)
+    assert not t.is_alive(), "a thread de trabalho ficou presa"
+
+
+def test_log_vindo_de_outra_thread_nao_chama_o_tkinter(app, monkeypatch):
+    chamadas_fora = _vigiar_after(app, monkeypatch)
+    _em_outra_thread(lambda: app_mod.logger.info("linha de log vinda da thread do robô"))
+    assert chamadas_fora == []
+
+
+def test_na_ui_vindo_de_outra_thread_nao_chama_o_tkinter(app, monkeypatch):
+    chamadas_fora = _vigiar_after(app, monkeypatch)
+    _em_outra_thread(lambda: app._na_ui(app.lbl_progresso.configure, text="vindo da thread"))
+    assert chamadas_fora == []
+
+
+def test_logs_simultaneos_das_duas_threads_nao_travam_e_chegam_a_tela(app):
+    total = 300
+    marcador = f"estresse-{time.time()}"
+    estado = {"principal": 0, "fim": False}
+
+    def robo():
+        for i in range(total):
+            app_mod.logger.info(f"{marcador} robo {i}")
+
+    def principal_escreve():
+        if estado["principal"] < total:
+            app_mod.logger.info(f"{marcador} principal {estado['principal']}")
+            estado["principal"] += 1
+            app.after(1, principal_escreve)
+
+    t = threading.Thread(target=robo, daemon=True)
+    app.after(1, principal_escreve)
+    t.start()
+
+    fim = time.time() + 20
+    while time.time() < fim:
+        app.update()
+        texto = app.txt_logs.get("1.0", "end")
+        completo = texto.count(f"{marcador} robo") == total and texto.count(f"{marcador} principal") == total
+        if completo and not t.is_alive():
+            estado["fim"] = True
+            break
+        time.sleep(0.02)
+    assert estado["fim"], "nem todas as linhas de log chegaram à tela em 20 s"

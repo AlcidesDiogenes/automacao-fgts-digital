@@ -333,11 +333,11 @@ O projeto conta com testes unitários cobrindo o gerenciamento de certificados, 
 - `tests/test_bot_seguranca.py` roda o robô contra um **portal FGTS Digital falso** (HTML servido pelo próprio Playwright por interceptação de rotas — nenhuma requisição sai para a internet). Requer o Chromium do Playwright (`playwright install chromium`).
 - `tests/test_validacao_pdf.py` gera PDFs sintéticos com `reportlab` e testa a validação de conteúdo.
 - `tests/test_bot_esperas.py` testa as esperas do robô (o `is_visible(timeout=...)` do Playwright ignora o timeout) e a detecção imediata de "sem débitos".
-- `tests/test_ui_execucao.py` abre a janela real com robô e navegador falsos: contadores, mensagem final, botão *Parar* e nenhuma alteração de widget fora da thread principal.
+- `tests/test_ui_execucao.py` abre a janela real com robô e navegador falsos: contadores, mensagem final, botão *Parar*, nenhuma chamada ao Tkinter fora da thread principal (inclusive pelo log) e logs simultâneos das duas threads sem travar.
 - `tests/test_browser_modos.py` confere a abertura do navegador (reaproveitar o Chrome via CDP, reservas) e garante que **nenhum caminho usa `client_certificates`** (regressão do captcha, ADR-0004).
 - `tests/test_logger.py` garante que o arquivo `data/logs/execucao_AAAA-MM-DD.log` é criado.
 
-A pasta `tests/` contém **somente testes automáticos**: nenhum deles acessa o portal real (o `pytest` roda tudo, sem exclusões).
+A pasta `tests/` contém **somente testes automáticos**: nenhum deles acessa o portal real (o `pytest` roda tudo, sem exclusões). Se algum teste passar de 5 minutos, o `pytest` imprime a pilha de todas as threads (`faulthandler_timeout` no `pytest.ini`), para diagnosticar travamentos.
 
 ### Diagnóstico manual (portal real)
 

@@ -6,7 +6,9 @@ padronizados e tabelas de alta resolução.
 """
 
 import os
+import sys
 import json
+import queue
 import threading
 from pathlib import Path
 from datetime import datetime
@@ -20,7 +22,7 @@ from src.core.browser import BrowserManager
 from src.modules.fgts_digital.bot import FGTSDigitalBot
 from src.modules.fgts_digital.parser import calcular_competencia, limpar_cnpj, formatar_cnpj, validar_cnpj
 from src.modules.folha_relatorio.parser_pdf import RelatorioFolhaParser
-from src.utils.logger import logger, add_log_listener
+from src.utils.logger import logger, add_log_listener, remove_log_listener
 from src.ui.theme import CORES, RAIO, FONTE_FAMILIA, FONTE_MONO
 from config import settings
 
@@ -86,6 +88,11 @@ class FGTSDigitalApp(ctk.CTk):
 
         # Construção da Interface
         self._construir_layout_principal()
+
+        # Fila única de tudo que outras threads querem mostrar na tela (logs e atualizações).
+        # Só a thread principal toca no Tkinter: ela esvazia a fila a cada 50 ms.
+        self._fila_ui: "queue.Queue" = queue.Queue()
+        self._id_drenagem = self.after(50, self._drenar_fila_ui)
 
         # Conecta logs à interface
         add_log_listener(self._adicionar_log_interface)
@@ -1648,10 +1655,40 @@ class FGTSDigitalApp(ctk.CTk):
             messagebox.showerror("Erro", "O arquivo não existe.")
 
     def _adicionar_log_interface(self, mensagem: str, nivel: str):
-        def append():
-            self.txt_logs.insert("end", f"{mensagem}\n")
-            self.txt_logs.see("end")
-        self.after(0, append)
+        """
+        Listener do logging: só enfileira (não toca no Tkinter). É chamado com a trava do
+        handler de log segura e de qualquer thread; chamar self.after() daqui fazia a thread
+        do robô esperar a thread principal enquanto esta esperava a trava do log (deadlock).
+        """
+        self._fila_ui.put(lambda: self._inserir_linha_log(mensagem))
+
+    def _inserir_linha_log(self, mensagem: str):
+        self.txt_logs.insert("end", f"{mensagem}\n")
+        self.txt_logs.see("end")
+
+    def _drenar_fila_ui(self):
+        """Executa, na thread principal, o que as outras threads enfileiraram (até 500 itens por ciclo)."""
+        try:
+            for _ in range(500):
+                funcao = self._fila_ui.get_nowait()
+                try:
+                    funcao()
+                except Exception as e:
+                    print(f"[UI] Falha ao aplicar atualização de tela: {e}", file=sys.stderr)
+        except queue.Empty:
+            pass
+        try:
+            self._id_drenagem = self.after(50, self._drenar_fila_ui)
+        except tk.TclError:
+            pass  # janela já destruída
+
+    def destroy(self):
+        remove_log_listener(self._adicionar_log_interface)
+        try:
+            self.after_cancel(self._id_drenagem)
+        except Exception:
+            pass
+        super().destroy()
 
     def _limpar_logs(self):
         self.txt_logs.delete("1.0", "end")
@@ -1667,15 +1704,13 @@ class FGTSDigitalApp(ctk.CTk):
     # EXECUÇÃO DO ROBÔ (WORKER THREAD)
     # O Tkinter não é thread-safe: a thread do robô nunca toca em widgets nem em
     # variáveis Tk. A configuração é lida na thread principal (_coletar_config_execucao)
-    # e toda atualização de tela passa por _na_ui (self.after(0, ...)).
+    # e toda atualização de tela passa por _na_ui, que só enfileira em self._fila_ui
+    # (nunca chama self.after() de outra thread — ver _drenar_fila_ui).
     # -------------------------------------------------------------------------
 
     def _na_ui(self, funcao, *args, **kwargs):
-        """Agenda uma função para rodar na thread principal do Tkinter."""
-        try:
-            self.after(0, lambda: funcao(*args, **kwargs))
-        except Exception:
-            pass
+        """Agenda uma função para rodar na thread principal (via fila; seguro em qualquer thread)."""
+        self._fila_ui.put(lambda: funcao(*args, **kwargs))
 
     def _coletar_config_execucao(self) -> Dict[str, Any]:
         """Lê todas as opções da tela (thread principal) para a thread do robô."""
