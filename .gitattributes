@@ -1,0 +1,6 @@
+# Scripts do Windows sempre com CRLF na extracao, em qualquer maquina:
+# com LF puro o cmd.exe executa pedacos de linha como comandos.
+# Padrao do workspace: Skills/Padroes/padrao-geracao-scripts-windows-crlf.md
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf

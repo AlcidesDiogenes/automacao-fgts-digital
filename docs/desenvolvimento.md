@@ -59,7 +59,7 @@ tests/                  somente testes automáticos (pytest)
 - Esperas no robô: `_elemento_visivel` / `_clicar_primeiro_disponivel` aguardam de verdade até `timeout_ms` (o `is_visible(timeout=...)` do Playwright ignora o timeout). Use `timeout_ms=0` só quando a página já foi aguardada antes.
 - Emissão: qualquer dúvida → **não emitir** e registrar o motivo no status ([ADR-0003](decisoes/ADR-0003-travas-da-emissao.md)).
 - Antes de mexer em login/navegador: ler [ADR-0001](decisoes/ADR-0001-chrome-nativo-cdp-porta-9222.md), [ADR-0002](decisoes/ADR-0002-mascaramento-de-automacao-stealth.md) e [ADR-0004](decisoes/ADR-0004-remocao-do-modo-pfx.md) (histórico do captcha/WAF).
-- Scripts `.bat`/`.cmd`: sempre **CRLF** e caminhos entre aspas.
+- Scripts `.bat`/`.cmd`: sempre **CRLF**, **só ASCII** (sem acentos: o console usa a página de código 850 e "Automação" gravado em ANSI aparece como "AutomaþÒo") e `cd /d "%~dp0"` com aspas. O `.gitattributes` força CRLF na extração em qualquer máquina (inclusive clone sem `core.autocrlf` e "Download ZIP" do GitHub); `tests/test_scripts_windows.py` verifica tudo isso.
 - Decisões relevantes viram ADR em `docs/decisoes/`.
 
 ## Fluxo de testes

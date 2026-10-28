@@ -350,7 +350,9 @@ automacao-fgts-digital/
 │       ├── app.py              # Janela principal com responsividade e KPIs
 │       └── theme.py            # Design tokens, cores e fontes
 ├── tests/                      # Somente testes automatizados (pytest), sem acesso ao portal real
-├── iniciar.bat                 # Script de inicialização rápida
+├── .gitattributes              # Força CRLF nos scripts .bat/.cmd em qualquer máquina
+├── iniciar.bat                 # Inicialização rápida (sem console)
+├── iniciar_com_console.bat     # Inicialização com console para depurar
 ├── main.py                     # Entrypoint da aplicação (GUI & CLI)
 ├── pytest.ini                  # Configurações do pytest
 ├── requirements.txt            # Dependências do projeto
