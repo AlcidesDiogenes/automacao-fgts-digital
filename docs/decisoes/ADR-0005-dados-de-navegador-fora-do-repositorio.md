@@ -6,7 +6,7 @@
 
 ## Contexto
 
-Na auditoria v2.1 foram encontradas em `data/` duas cópias do **histórico do Google Chrome** (`h_copy.db`, `hb_copy.db`, com as tabelas `urls`, `visits` e `downloads`), provavelmente criadas durante a investigação do login no Gov.br. Histórico de navegação é dado pessoal (LGPD) e pode revelar sites de clientes e do contador. Os arquivos estavam ignorados por `data/*.db`, mas uma cópia salva fora de `data/` entraria no Git.
+Na auditoria de 27/10/2026 foram encontradas em `data/` duas cópias do **histórico do Google Chrome** (`h_copy.db`, `hb_copy.db`, com as tabelas `urls`, `visits` e `downloads`), provavelmente criadas durante a investigação do login no Gov.br. Histórico de navegação é dado pessoal (LGPD) e pode revelar sites de clientes e do contador. Os arquivos estavam ignorados por `data/*.db`, mas uma cópia salva fora de `data/` entraria no Git.
 
 O perfil de navegador do robô (`data/browser_profile/`) também guarda cookies de sessão do Gov.br.
 

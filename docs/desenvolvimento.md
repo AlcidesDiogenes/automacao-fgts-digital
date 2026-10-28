@@ -72,7 +72,7 @@ Decisão registrada em [ADR-0006](decisoes/ADR-0006-fluxo-de-testes.md).
 | Integração (arquivos) | `test_pdf_parser.py` | Leitor do Domínio com **PDF sintético** no layout real. |
 | Integração (navegador) | `test_bot_seguranca.py`, `test_bot_esperas.py`, `test_browser_modos.py` | Robô contra um **portal FGTS Digital falso** (Playwright com rotas interceptadas, sem rede) e abertura do navegador simulada. |
 | Ponta a ponta (interface) | `test_ui_execucao.py` | Janela real com robô simulado: contadores, mensagem final, Parar, regra de threads, logs simultâneos. |
-| Regressão | todos acima | Cada bug corrigido na v2.1 tem teste que falhava antes. |
+| Regressão | todos acima | Cada bug corrigido na auditoria de 27–28/10/2026 tem teste que falhava antes. |
 | Manual (portal real) | `scripts/diagnostico/`, `main.py --cli --conferir` | Login real e conferência em empresas reais — roteiro abaixo. |
 
 **Rodar tudo:** `.\venv\Scripts\python.exe -m pytest -q` (≈ 80 s). Rodar a suíte completa **antes de cada commit**; ao mexer em interface/threads, rodar várias vezes seguidas (travamentos são intermitentes). Se algum teste passar de 5 min, o `faulthandler_timeout` do `pytest.ini` imprime a pilha de todas as threads.

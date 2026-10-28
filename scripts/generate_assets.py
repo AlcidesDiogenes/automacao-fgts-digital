@@ -109,8 +109,8 @@ HTML_BANNER = """<!DOCTYPE html>
 <body>
   <div class="glow-cyan"></div>
   <div class="glow-indigo"></div>
-  <div class="tag">⚡ Versão 2.1 Enterprise • Produção</div>
-  <h1>Automação FGTS Digital Pro</h1>
+  <div class="tag">⚡ Enterprise • Produção</div>
+  <h1>Automação FGTS Digital</h1>
   <p>Plataforma de alta performance para escritórios contábeis e departamentos fiscais. Auditoria de encargos da folha (Sistema Domínio), integração mTLS Gov.br e emissão automatizada de GFD e relatórios analíticos em lote.</p>
   <div class="badges">
     <div class="badge"><span class="icon">🔒</span> Autenticação <span class="hl">mTLS Certificado Windows</span></div>

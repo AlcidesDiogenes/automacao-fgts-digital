@@ -6,7 +6,7 @@
 
 ## Contexto
 
-O programa oferecia dois modos de certificado: **instalado no Windows** e **arquivo .pfx** (com senha). Na auditoria v2.1 (Fase 2) o modo arquivo foi "corrigido" para injetar o `.pfx` via `client_certificates` do Playwright, porque o Chrome do sistema só enxerga certificados instalados no Windows.
+O programa oferecia dois modos de certificado: **instalado no Windows** e **arquivo .pfx** (com senha). Na auditoria de 27/10/2026 (Fase 2) o modo arquivo foi "corrigido" para injetar o `.pfx` via `client_certificates` do Playwright, porque o Chrome do sistema só enxerga certificados instalados no Windows.
 
 Na Fase 3 constatou-se que essa abordagem **já tinha sido descartada em 13/10/2026**: o `client_certificates` cria um proxy interno no Playwright que bloqueia a resolução dos serviços de captcha (hCaptcha/Arkose), e o Gov.br responde **ERL0033800 – "Captcha inválido"**. Nas execuções reais de 27/10/2026 o Gov.br pediu captcha em 2 de 3 logins — o modo PFX falharia nesses casos.
 

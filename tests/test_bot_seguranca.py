@@ -1,5 +1,5 @@
 """
-Testes de segurança da emissão (Fase 1 da auditoria v2.1).
+Testes de segurança da emissão (Fase 1 da auditoria de 27/10/2026).
 O robô roda contra um portal falso (ver conftest.py): o objetivo é garantir que,
 na dúvida, ele NÃO emite e NÃO salva arquivo com nome de outra empresa.
 """

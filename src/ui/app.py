@@ -37,7 +37,7 @@ class FGTSDigitalApp(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        self.title("Automação FGTS Digital Pro v2.1")
+        self.title("Automação FGTS Digital")
         self.geometry("1180x780")
         self.minsize(980, 580)
 
@@ -144,7 +144,7 @@ class FGTSDigitalApp(ctk.CTk):
 
         lbl_logo_sub = ctk.CTkLabel(
             brand_box,
-            text="Automação de Encargos Pro",
+            text="Automação de Encargos",
             font=ctk.CTkFont(family=FONTE_FAMILIA, size=11),
             text_color="#94A3B8"
         )
@@ -208,7 +208,7 @@ class FGTSDigitalApp(ctk.CTk):
 
         lbl_versao = ctk.CTkLabel(
             footer_sidebar,
-            text="Versão 2.1.0 • mTLS & CDP",
+            text="mTLS & CDP",
             font=ctk.CTkFont(size=10),
             text_color="#64748B"
         )
@@ -1769,7 +1769,7 @@ class FGTSDigitalApp(ctk.CTk):
         output_dir = config["output_dir"]
         modo_rotulo = "Conferência de Valores" if apenas_conferir else "Emissão em Lote"
 
-        logger.info(f"--- Iniciando Rodada FGTS Digital Pro: {modo_rotulo} (Competência: {competencia}) ---")
+        logger.info(f"--- Iniciando Rodada FGTS Digital: {modo_rotulo} (Competência: {competencia}) ---")
         self._na_ui(self.lbl_progresso.configure, text=f"Carregando lote para competência {competencia}...")
 
         contadores = {"sucessos": 0, "pendentes": 0, "erros": 0, "iguais": 0, "divergencias": 0}

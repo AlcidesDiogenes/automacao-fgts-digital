@@ -53,7 +53,7 @@ EMPRESAS = [
 ]
 DOMESTICO = ("123.456.789-09", "EMPREGADOR DOMESTICO FICTICIO", [("Simples doméstico", "312,40")])
 
-# Status que o robô simulado devolve, por CNPJ (mostra os tipos de resultado da v2.1)
+# Status que o robô simulado devolve, por CNPJ (mostra os tipos de resultado das travas de emissão)
 STATUS_SIMULADO = {
     "11444777000161": "Sucesso - Guia Emitida",
     "22333444000181": "Sucesso - Guia Emitida",

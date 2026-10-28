@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/banner.png" alt="Automação FGTS Digital Pro" width="100%">
+  <img src="docs/assets/banner.png" alt="Automação FGTS Digital" width="100%">
 </p>
 
 <p align="center">
@@ -19,7 +19,7 @@ Sistema corporativo de alto desempenho desenvolvido para escritórios de contabi
 - [Visão Geral](#-visão-geral)
 - [Demonstração do Fluxo em Ação](#-demonstração-do-fluxo-em-ação)
 - [Principais Funcionalidades](#-principais-funcionalidades)
-- [Interface Gráfica (v2.1)](#-interface-gráfica-v21)
+- [Interface Gráfica](#-interface-gráfica)
 - [Inteligência de Reconhecimento Multi-Cards](#-inteligência-de-reconhecimento-multi-cards)
 - [Arquitetura e Tecnologias](#-arquitetura-e-tecnologias)
 - [Documentação Técnica](#-documentação-técnica)
@@ -40,7 +40,7 @@ Sistema corporativo de alto desempenho desenvolvido para escritórios de contabi
 
 O fechamento mensal de encargos trabalhistas exige a apuração e geração de guias para dezenas ou centenas de empresas clientes. O portal do **FGTS Digital** demanda autenticação Gov.br via mTLS, troca manual de perfil por procuração outorgada e consultas individuais.
 
-A **Automação FGTS Digital Pro** elimina o trabalho manual repetitivo:
+A **Automação FGTS Digital** elimina o trabalho manual repetitivo:
 1. Conecta-se com o Certificado Digital do contador instalado no Windows (A1 ou token A3).
 2. Lê a lista de empresas outorgantes (via planilha Excel ou diretamente do relatório em PDF do Sistema Domínio).
 3. Efetua a troca de perfil para cada cliente no portal via Procuração Eletrônica (SPE).
@@ -97,7 +97,7 @@ Ilustração (não é captura do portal, para não expor dados de clientes) das 
 
 ---
 
-## 🖥 Interface Gráfica (v2.1)
+## 🖥 Interface Gráfica
 
 <p align="center">
   <img src="docs/assets/tela_painel.png" alt="Painel de Controle: cartões de empresas no lote, certificado do Windows e trava ativa; competência, pasta de saída e interruptores de bloqueio por divergência e exigência de valor esperado" width="95%">
@@ -143,7 +143,7 @@ Em cenários reais do portal FGTS Digital, uma mesma competência pode apresenta
 1. **Identificação dos Blocos**: O robô faz a varredura de todos os containers contendo o cabeçalho `Mensal - Vencimento`.
 2. **Cálculo Consolidado**: Para cada card, soma as tabelas internas de **FGTS** e **Consignado**.
 3. **Cruzamento de Precisão**: Escolhe o card cujo `Total Guia` fica **mais próximo** do valor apurado na folha do Sistema Domínio (`fgts_esperado`).
-4. **Descarte de Falsas Divergências**: Ignora guias residuais ou retificadoras (ex: R$ 23,45). Se nem o card mais próximo bater com a folha (diferença acima de R$ 0,02), a **trava de divergência** impede a emissão ([travas](#-travas-de-segurança-da-emissão-v21)).
+4. **Descarte de Falsas Divergências**: Ignora guias residuais ou retificadoras (ex: R$ 23,45). Se nem o card mais próximo bater com a folha (diferença acima de R$ 0,02), a **trava de divergência** impede a emissão ([travas](#-travas-de-segurança-da-emissão)).
 5. **Independência de Vencimento**: A seleção independe de a data ser dia 20 ou antecipada por finais de semana e feriados.
 
 ---
@@ -198,7 +198,7 @@ Para cada empresa da lista:
 5. Emite e baixa o **Relatório Analítico de Débitos** (FGTS e Consignado).
 6. Salva e renomeia os arquivos na pasta da competência.
 
-### 🛡 Travas de Segurança da Emissão (v2.1)
+### 🛡 Travas de Segurança da Emissão
 O robô segue a regra **"na dúvida, não emite"**. Cada empresa só tem guia emitida se passar por todas as travas:
 
 | Trava | O que verifica | Status quando bloqueia |

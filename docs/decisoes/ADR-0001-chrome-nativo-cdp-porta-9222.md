@@ -1,7 +1,7 @@
 # ADR-0001 — Google Chrome nativo controlado via CDP na porta 9222
 
 - **Status:** Aceita
-- **Data:** 27/10/2026 (registro formal de decisão tomada em 13/10/2026; risco da porta avaliado na auditoria v2.1)
+- **Data:** 27/10/2026 (registro formal de decisão tomada em 13/10/2026; risco da porta avaliado na auditoria de 27/10/2026)
 - **Escopo:** `src/core/browser.py` (`_conectar_chrome_cdp`, `abrir_chrome_nativo_para_login`)
 
 ## Contexto

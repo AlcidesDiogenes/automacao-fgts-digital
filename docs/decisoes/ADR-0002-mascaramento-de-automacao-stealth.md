@@ -1,7 +1,7 @@
 # ADR-0002 — Mascaramento de sinais de automação (stealth) no navegador
 
 - **Status:** Aceita (código mantido como está)
-- **Data:** 27/10/2026 (registro formal na auditoria v2.1; técnica adotada em 13/10/2026)
+- **Data:** 27/10/2026 (registro formal na auditoria de 27/10/2026; técnica adotada em 13/10/2026)
 - **Escopo:** `src/core/browser.py` (`_args_base`, `_preparar_contexto`), dependência `playwright-stealth`
 
 ## Contexto

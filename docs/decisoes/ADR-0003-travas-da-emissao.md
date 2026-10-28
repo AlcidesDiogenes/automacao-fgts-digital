@@ -6,7 +6,7 @@
 
 ## Contexto
 
-A auditoria v2.1 encontrou três caminhos em que o robô podia emitir ou salvar a guia errada **sem avisar**:
+A auditoria de 27/10/2026 encontrou três caminhos em que o robô podia emitir ou salvar a guia errada **sem avisar**:
 
 1. A troca de perfil por procuração era considerada bem-sucedida se nenhum alerta aparecesse — mesmo que o clique em "Selecionar" não tivesse funcionado. A guia seria emitida no perfil da empresa anterior e salva com o nome da atual.
 2. Quando o evento de download não chegava, o robô copiava "o PDF mais recente da pasta temporária" — que podia ser o relatório analítico — e marcava "Sucesso".
@@ -23,7 +23,7 @@ Toda incerteza bloqueia a emissão e vira um status explícito:
 | Perfil | Após a troca, o modal fecha e `span.dados-perfil` exibe a raiz do CNPJ escolhido (confirmado no portal real em 27/10/2026). | `Perfil não confirmado` |
 | Valor de referência | Sem valor esperado, não emite (interruptor "Exigir valor esperado", ligado por padrão). | `Sem Valor de Referência (Não Emitida)` |
 | Card Mensal | O botão "Emitir guia" só é clicado dentro do card Mensal escolhido. | `Card Mensal Não Identificado (Não Emitida)` |
-| Divergência | Diferença máxima de R$ 0,02 entre portal e folha (trava existente desde a v2.0). | `Divergência de Valores (Não Emitida)` |
+| Divergência | Diferença máxima de R$ 0,02 entre portal e folha (trava que já existia antes da auditoria). | `Divergência de Valores (Não Emitida)` |
 | Relatórios | Cada relatório baixado deve conter a raiz do CNPJ e a competência; se reprovar, indica perfil/empresa errados e a guia não é emitida. | `Falha na Validação do PDF (Relatório) - Guia Não Emitida` |
 | Guia | A GFD deve conter raiz do CNPJ, competência e valor do card, e não pode ser cópia de um PDF já salvo para a empresa. | `Falha na Validação do PDF (Guia)` |
 

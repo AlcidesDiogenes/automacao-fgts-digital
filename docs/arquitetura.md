@@ -1,12 +1,12 @@
 # Arquitetura
 
-> Versão 2.1 (auditoria de 27–28/10/2026). Atualize este documento no mesmo commit de qualquer mudança de componente, fluxo ou integração.
+> Revisado na auditoria de 27–28/10/2026. Atualize este documento no mesmo commit de qualquer mudança de componente, fluxo ou integração.
 
 ## Visão geral
 
 Aplicação desktop Windows que lê os encargos de FGTS calculados na folha (relatório "Pagamento de Encargos" do **Sistema Domínio** ou planilha), entra no **FGTS Digital** pelo Gov.br com o certificado do contador instalado no Windows, troca o perfil por **procuração eletrônica** para cada empresa cliente, confere o valor apurado no portal contra a folha e emite a **GFD** (guia) e os relatórios analíticos — ou apenas confere, sem emitir.
 
-Regra central desde a v2.1: **na dúvida, não emite** ([ADR-0003](decisoes/ADR-0003-travas-da-emissao.md)).
+Regra central desde a auditoria de 27/10/2026: **na dúvida, não emite** ([ADR-0003](decisoes/ADR-0003-travas-da-emissao.md)).
 
 ## Componentes
 

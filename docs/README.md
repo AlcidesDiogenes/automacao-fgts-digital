@@ -1,4 +1,4 @@
-# Documentação — Automação FGTS Digital Pro
+# Documentação — Automação FGTS Digital
 
 | Documento | Conteúdo |
 | :--- | :--- |

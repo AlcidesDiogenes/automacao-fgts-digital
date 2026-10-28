@@ -1,6 +1,6 @@
 """
 Testes do logger central: o arquivo de log precisa ser criado mesmo quando o
-logger já foi configurado na importação do módulo (bug corrigido na v2.1).
+logger já foi configurado na importação do módulo (bug corrigido em 27/10/2026).
 """
 
 import logging
