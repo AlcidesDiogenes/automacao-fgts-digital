@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/python-3.10%2B-blue.svg" alt="Python Version">
+  <img src="https://img.shields.io/badge/python-3.12-blue.svg" alt="Python 3.12">
   <img src="https://img.shields.io/badge/playwright-chromium-green.svg" alt="Playwright">
   <img src="https://img.shields.io/badge/GUI-CustomTkinter-blueviolet.svg" alt="CustomTkinter">
   <img src="https://img.shields.io/badge/status-active-success.svg" alt="Status">
@@ -19,9 +19,10 @@ Sistema corporativo de alto desempenho desenvolvido para escritórios de contabi
 - [Visão Geral](#-visão-geral)
 - [Demonstração do Fluxo em Ação](#-demonstração-do-fluxo-em-ação)
 - [Principais Funcionalidades](#-principais-funcionalidades)
-- [Interface Gráfica (UI v2.0 Pro)](#-interface-gráfica-ui-v20-pro)
+- [Interface Gráfica (v2.1)](#-interface-gráfica-v21)
 - [Inteligência de Reconhecimento Multi-Cards](#-inteligência-de-reconhecimento-multi-cards)
 - [Arquitetura e Tecnologias](#-arquitetura-e-tecnologias)
+- [Documentação Técnica](#-documentação-técnica)
 - [Modos de Operação](#-modos-de-operação)
   - [1. Emissão de Guias e Relatórios (Padrão)](#1-emissão-de-guias-e-relatórios-padrão)
   - [2. Modo "Apenas Conferir" (Auditoria de Folha)](#2-modo-apenas-conferir-auditoria-de-folha)
@@ -51,16 +52,26 @@ A **Automação FGTS Digital Pro** elimina o trabalho manual repetitivo:
 
 ## 🎬 Demonstração do Fluxo em Ação
 
+### Interface real (dados fictícios)
+
 <p align="center">
-  <img src="docs/assets/demo.gif" alt="Demonstração do Fluxo de Automação" width="90%">
+  <img src="docs/assets/fluxo_app.gif" alt="GIF da interface: importação do relatório do Domínio, envio das empresas ao robô e execução de um lote com contadores de emitidas, divergências e sem débitos" width="90%">
 </p>
 
-O GIF acima ilustra as cinco etapas executadas de forma contínua pelo robô:
-1. **Importação e Leitura**: Extração precisa de CNPJs, Razões Sociais e encargos do Sistema Domínio.
-2. **Conexão mTLS**: Handshake seguro com o Gov.br utilizando o repositório de certificados nativo do Windows.
-3. **Troca de Perfil SPE**: Acesso automatizado à procuração de cada cliente.
-4. **Seleção Inteligente**: Reconhecimento do card da guia correta mesmo quando há débitos residuais ou retificadoras.
-5. **Emissão e Auditoria**: Download da GFD, relatórios analíticos em PDF e planilha Excel consolidada.
+Importação do relatório do Domínio → envio das empresas para a fila → execução do lote (robô simulado na gravação) → registro nos logs. Todas as empresas, CNPJs e valores são **fictícios**.
+
+### Esteira no portal (ilustração)
+
+<p align="center">
+  <img src="docs/assets/demo.gif" alt="Ilustração das cinco etapas do robô no portal FGTS Digital, com dados fictícios" width="90%">
+</p>
+
+Ilustração (não é captura do portal, para não expor dados de clientes) das cinco etapas executadas pelo robô:
+1. **Importação e Leitura**: CNPJs, razões sociais e encargos do relatório do Sistema Domínio.
+2. **Conexão mTLS**: login no Gov.br com o certificado instalado no Windows.
+3. **Troca de Perfil SPE**: procuração eletrônica de cada cliente, com confirmação do CNPJ ativo.
+4. **Seleção do card Mensal**: escolha da guia certa mesmo com débitos residuais ou retificadoras.
+5. **Emissão e Auditoria**: GFD e relatórios analíticos validados, planilha Excel consolidada.
 
 ---
 
@@ -71,13 +82,13 @@ O GIF acima ilustra as cinco etapas executadas de forma contínua pelo robô:
   - O modo de certificado em arquivo `.pfx` foi removido em 27/10/2026: ele quebra o captcha do Gov.br ([ADR-0004](docs/decisoes/ADR-0004-remocao-do-modo-pfx.md)).
 - **Importador de Relatórios em PDF (Exclusivo Sistema Domínio)**:
   - Atualmente projetado para leitura e extração exclusiva do modelo de relatório em PDF gerado pelo **Sistema Domínio (Thomson Reuters)**.
-  - Extração automática de CNPJs, Razões Sociais e consolidação precisa de encargos: **FGTS**, **FGTS 13°**, **Emp. Créd. Trab.** (Consignado Trabalhador Ativo) e **Emp. Créd. Tr. Resc.** (Consignado Rescindido).
+  - Extração automática de CNPJs/CPFs, razões sociais e encargos: **FGTS** (todas as linhas iniciadas por "FGTS", inclusive 13º), **FGTS Compl.**, **Emp. Créd. Trab.** (consignado do trabalhador ativo), **Emp. Créd. Tr. Resc.** (consignado rescindido), **Simples doméstico** e **FGTS Rescisório** (com o nome do empregado). Quais encargos entram no FGTS esperado é configurável em Parâmetros.
 - **Modo "Apenas Conferir Valores"**:
   - Consulta os débitos apurados no portal e cruza com os valores esperados sem emitir ou recalcular guias.
   - Alerta sobre divergências de centavos, guias já quitadas ou ausência de débitos.
 - **Nomenclatura Totalmente Flexível**:
   - Padrões configuráveis para Guia FGTS, Relatório Analítico e Relatório Consignado.
-  - Suporte a tags dinâmicas como `{competencia}`, `{cnpj}`, `{nome_empresa}`.
+  - Tags `Competencia` (ou `Comp`), `CNPJ`, `Empresa` (ou `Razao`), com ou sem chaves — ex.: `FGTS - {competencia} - {empresa}`. Sem chaves, só a palavra isolada é trocada ("Comprovante" não é alterado).
 - **Painel Executivo em Tempo Real**:
   - Cards de KPI simétricos e responsivos acompanhando o progresso da fila.
   - Barra de rolagem nativa para acomodar telas de qualquer resolução (laptops a monitores ultrawide).
@@ -86,13 +97,24 @@ O GIF acima ilustra as cinco etapas executadas de forma contínua pelo robô:
 
 ---
 
-## 🖥️ Interface Gráfica (UI v2.0 Pro)
+## 🖥 Interface Gráfica (v2.1)
 
 <p align="center">
-  <img src="docs/assets/ui_overview.png" alt="Visão Geral da Interface" width="95%">
+  <img src="docs/assets/tela_painel.png" alt="Painel de Controle: cartões de empresas no lote, certificado do Windows e trava ativa; competência, pasta de saída e interruptores de bloqueio por divergência e exigência de valor esperado" width="95%">
 </p>
 
-A interface foi projetada seguindo diretrizes rígidas de ergonomia e confiabilidade visual, com arquitetura baseada em **Sidebar Lateral de Navegação** e **Paineis Temáticos**:
+<table>
+  <tr>
+    <td width="50%"><img src="docs/assets/tela_importar_pdf.png" alt="Importar Relatório: tabela com empresas fictícias lidas do relatório do Domínio, valores de FGTS mensal, consignado e total da guia"><br><sub><b>Importar Relatório (PDF)</b> — leitura do relatório do Domínio</sub></td>
+    <td width="50%"><img src="docs/assets/tela_fila.png" alt="Fila de Empresas: cinco empresas fictícias com competência, FGTS da folha e validação"><br><sub><b>Fila de Empresas</b> — o que o robô vai processar</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/assets/tela_parametros.png" alt="Parâmetros: certificado do Windows, regras de leitura do relatório e nomenclatura dos documentos"><br><sub><b>Parâmetros</b> — certificado, regras de leitura e nomenclatura</sub></td>
+    <td width="50%"><img src="docs/assets/tela_logs.png" alt="Logs: console com o processamento de um lote de empresas fictícias"><br><sub><b>Logs & Auditoria</b> — acompanhamento do lote</sub></td>
+  </tr>
+</table>
+
+Imagens geradas da interface real com dados fictícios por `scripts/capturar_telas.py`.
 
 1. **Sidebar Lateral de Navegação**:
    - ⚙ **Painel de Controle**: Configuração da competência de apuração, opções de auditoria/emissão, seleção de pastas e armazenamento e acionamento do robô.
@@ -102,7 +124,7 @@ A interface foi projetada seguindo diretrizes rígidas de ergonomia e confiabili
    - 📜 **Logs & Auditoria**: Console com terminal em tempo real e monitoramento dos passos do robô.
 2. **Cards de Status e KPIs Executivos**:
    - **Empresas no Lote**: Quantidade de clientes na fila de processamento.
-   - **Certificado Digital**: Indicador em tempo real do status e validade do certificado (Windows ou A1).
+   - **Certificado Digital**: Indica que o robô usa o certificado instalado no Windows.
    - **Auditoria de Valores**: Indicador visual da trava anti-divergência de valores com a folha.
 3. **Persistência Centralizada**:
    - Todas as configurações e regras de encargos são salvas em `config/parametros.json` e recarregadas automaticamente ao abrir o sistema.
@@ -120,13 +142,13 @@ Em cenários reais do portal FGTS Digital, uma mesma competência pode apresenta
 ### Como o Robô Seleciona o Card Correto:
 1. **Identificação dos Blocos**: O robô faz a varredura de todos os containers contendo o cabeçalho `Mensal - Vencimento`.
 2. **Cálculo Consolidado**: Para cada card, soma as tabelas internas de **FGTS** e **Consignado**.
-3. **Cruzamento de Precisão**: Compara o `Total Guia` de cada card com o valor apurado na folha do Sistema Domínio (`fgts_esperado`).
-4. **Descarte de Falsas Divergências**: Ignora guias residuais ou retificadoras (ex: R$ 23,45) e foca exclusivamente no card de valor idêntico (ex: R$ 12.345,67), garantindo emissão correta sem falsos alertas.
+3. **Cruzamento de Precisão**: Escolhe o card cujo `Total Guia` fica **mais próximo** do valor apurado na folha do Sistema Domínio (`fgts_esperado`).
+4. **Descarte de Falsas Divergências**: Ignora guias residuais ou retificadoras (ex: R$ 23,45). Se nem o card mais próximo bater com a folha (diferença acima de R$ 0,02), a **trava de divergência** impede a emissão ([travas](#-travas-de-segurança-da-emissão-v21)).
 5. **Independência de Vencimento**: A seleção independe de a data ser dia 20 ou antecipada por finais de semana e feriados.
 
 ---
 
-## 🛠️ Arquitetura e Tecnologias
+## 🛠 Arquitetura e Tecnologias
 
 ```mermaid
 flowchart TD
@@ -142,13 +164,26 @@ flowchart TD
     J --> K["📊 Auditoria Final & Planilha Excel"]
 ```
 
-- **Linguagem**: Python 3.10+
+- **Linguagem**: Python 3.12
 - **Automação Web / Navegador**: [Playwright](https://playwright.dev/python/) com Chromium controlado por DevTools Protocol (CDP).
 - **Interface Gráfica**: [CustomTkinter](https://customtkinter.tomschimansky.com/) com design system dark/light contemporâneo.
 - **Processamento de Dados**: `pandas`, `openpyxl`.
 - **Extração de Documentos**: `pypdf`, `pdfplumber` e expressões regulares especializadas no layout do Sistema Domínio.
 - **Criptografia e Certificados**: `cryptography` (OpenSSL backend para parsing PKCS#12 e X.509).
 - **Testes**: `pytest` com suíte completa de testes unitários e de integração locais.
+
+---
+
+## 📚 Documentação Técnica
+
+Documentação completa em [`docs/`](docs/README.md):
+
+| Documento | Conteúdo |
+| :--- | :--- |
+| [Arquitetura](docs/arquitetura.md) | Componentes, fluxo de cada empresa no lote, threads, integrações e tecnologias |
+| [Desenvolvimento](docs/desenvolvimento.md) | Ambiente, configuração, convenções, fluxo de testes e roteiro de teste no portal real |
+| [Problemas conhecidos](docs/problemas-conhecidos.md) | Pendências abertas e causas raiz já resolvidas |
+| [Decisões (ADR)](docs/decisoes/README.md) | Decisões técnicas com alternativas e motivos |
 
 ---
 
@@ -163,7 +198,7 @@ Para cada empresa da lista:
 5. Emite e baixa o **Relatório Analítico de Débitos** (FGTS e Consignado).
 6. Salva e renomeia os arquivos na pasta da competência.
 
-### 🛡️ Travas de Segurança da Emissão (v2.1)
+### 🛡 Travas de Segurança da Emissão (v2.1)
 O robô segue a regra **"na dúvida, não emite"**. Cada empresa só tem guia emitida se passar por todas as travas:
 
 | Trava | O que verifica | Status quando bloqueia |
@@ -208,7 +243,7 @@ O robô autentica no Gov.br **somente com o certificado digital instalado no Win
 
 ### Pré-requisitos
 - **Windows 10 ou 11** (64 bits).
-- **Python 3.10 ou superior** instalado e adicionado ao `PATH`.
+- **Python 3.12** (versão testada) instalado e adicionado ao `PATH`.
 - Google Chrome ou Chromium instalado.
 
 ### 1. Clonar o Repositório
@@ -292,10 +327,15 @@ automacao-fgts-digital/
 │   ├── logs/                   # Logs de execução (ignorado no git)
 │   └── output/                 # Pastas de saída com PDFs e planilhas geradas
 ├── docs/
-│   ├── assets/                 # Imagens, diagramas e GIFs do README
+│   ├── README.md               # Índice da documentação técnica
+│   ├── arquitetura.md          # Componentes, fluxos, threads e integrações
+│   ├── desenvolvimento.md      # Ambiente, convenções e fluxo de testes
+│   ├── problemas-conhecidos.md # Pendências e causas raiz
+│   ├── assets/                 # Imagens e GIFs do README (dados fictícios)
 │   └── decisoes/               # Registro de decisões técnicas (ADR)
 ├── scripts/
-│   ├── generate_assets.py      # Gerador automatizado de assets visuais
+│   ├── generate_assets.py      # Gera as ilustrações do README (banner, multi-cards, esteira)
+│   ├── capturar_telas.py       # Captura as telas reais da interface com dados fictícios
 │   └── diagnostico/            # Scripts manuais que acessam o portal real (não são testes)
 ├── src/
 │   ├── core/                   # Módulos de apoio (navegador e Excel)

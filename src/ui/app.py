@@ -37,7 +37,7 @@ class FGTSDigitalApp(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        self.title("Automação FGTS Digital Pro v2.0")
+        self.title("Automação FGTS Digital Pro v2.1")
         self.geometry("1180x780")
         self.minsize(980, 580)
 
@@ -208,7 +208,7 @@ class FGTSDigitalApp(ctk.CTk):
 
         lbl_versao = ctk.CTkLabel(
             footer_sidebar,
-            text="Versão 2.0.0 • mTLS & CDP",
+            text="Versão 2.1.0 • mTLS & CDP",
             font=ctk.CTkFont(size=10),
             text_color="#64748B"
         )
