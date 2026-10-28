@@ -15,7 +15,7 @@ O perfil de navegador do robô (`data/browser_profile/`) também guarda cookies 
 1. O `.gitignore` ignora `*.db` e `*.db-journal` **em qualquer pasta**: o projeto não usa banco SQLite versionado.
 2. Perfis de navegador ficam em `data/*_profile/`, já ignorados.
 3. Cópias de histórico, cookies ou perfis de navegador **não devem ser criadas** dentro do projeto para depuração. Diagnósticos com dados de clientes (screenshots, HTML do portal) ficam em pasta temporária fora do repositório.
-4. Os arquivos existentes `data/h_copy.db` e `data/hb_copy.db` serão **apagados pelo usuário** (exclusão de dados é decisão do usuário).
+4. Os arquivos existentes `data/h_copy.db` e `data/hb_copy.db` **permanecem somente no computador do usuário** (decisão do usuário em 28/10/2026), protegidos pelo `.gitignore`.
 
 ## Alternativas consideradas
 
@@ -26,4 +26,4 @@ O perfil de navegador do robô (`data/browser_profile/`) também guarda cookies 
 
 ## Pendências
 
-- [ ] Usuário apagar `data/h_copy.db` e `data/hb_copy.db`.
+- Nenhuma: arquivos mantidos localmente por decisão do usuário (28/10/2026).
