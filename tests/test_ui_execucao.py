@@ -4,6 +4,7 @@ por versões falsas. Verifica que a thread do robô não trava a tela, que os co
 e a mensagem final saem certos e que o botão 'Parar' interrompe o lote.
 """
 
+import re
 import threading
 import time
 
@@ -315,17 +316,28 @@ def test_campo_vazio_exibe_xx_xxxx(app):
     assert app.entry_comp_manual._entry.get() == "xx/xxxx"  # texto exibido no campo
 
 
+def _soltar_tecla(widget, keysym):
+    """
+    Executa os binds de <KeyRelease> do widget como o Tk faria ao soltar a tecla.
+
+    Não usa event_generate: o Tk entrega teclas só ao widget com foco, e o Windows pode negar
+    o foco à janela de teste quando outra janela está em uso (o teste falhava às vezes).
+    Aqui o script do bind roda com a mesma substituição de %-campos que o Tk faz
+    ("??" para os campos que não se aplicam).
+    """
+    valores = {"#": "0", "T": "3", "W": str(widget), "K": keysym}  # 3 = KeyRelease
+    script = widget.bind("<KeyRelease>")
+    assert script, "o campo não tem bind de <KeyRelease>"
+    widget.tk.eval(re.sub(r"%(.)", lambda m: valores.get(m.group(1), "??"), script))
+
+
 def test_campo_e_variavel_sincronizados(app):
     app.comp_manual_var.set("09/2026")
     app.update()
     assert app.entry_comp_manual.get() == "09/2026"
     campo = app.entry_comp_manual._entry  # o campo de texto real é o widget interno do CTkEntry
-    campo.focus_force()
-    app.update()
     app.entry_comp_manual.delete(0, "end")
     app.entry_comp_manual.insert(0, "10/2026")
-    campo.event_generate("<KeyRelease>", keysym="6")  # Tk entrega teclas ao widget com foco
+    _soltar_tecla(campo, "6")  # sem foco: não depende da janela estar em primeiro plano
     app.update()
     assert app.comp_manual_var.get() == "10/2026"
-    app.focus_set()
-    app.update()

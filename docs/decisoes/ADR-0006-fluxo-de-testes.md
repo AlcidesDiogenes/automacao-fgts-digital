@@ -15,7 +15,7 @@
 1. **`tests/` contém só testes automáticos**, que nunca acessam a internet. `pytest` roda tudo, sem exclusões.
 2. **Portal simulado:** o robô é testado contra um "FGTS Digital falso" — HTML do próprio teste servido pelo Playwright com interceptação de rotas (`tests/conftest.py`); qualquer outra requisição é abortada. A estrutura do HTML imita o portal real (ex.: `span.dados-perfil`).
 3. **Somente dados fictícios** em testes, documentação e imagens. O relatório do Domínio é gerado no teste (`gerar_pdf_dominio`) no mesmo layout do real.
-4. **Interface testada de verdade:** janela real com robô/navegador simulados; laço de `update()` em vez de `mainloop()`+`quit()`.
+4. **Interface testada de verdade:** janela real com robô/navegador simulados; laço de `update()` em vez de `mainloop()`+`quit()`. **Sem depender do foco do Windows** (28/10/2026): teclas não são simuladas com `event_generate` (o Tk só as entrega ao widget com foco, e o Windows pode negar o foco à janela de teste); o teste executa o bind do widget com a substituição de `%`-campos do Tk (`_soltar_tecla` em `tests/test_ui_execucao.py`).
 5. **Diagnóstico de travamento:** `faulthandler_timeout = 300` no `pytest.ini`.
 6. **Portal real só manualmente**, por `scripts/diagnostico/` e `main.py --cli --conferir`, seguindo o roteiro de [desenvolvimento](../desenvolvimento.md#roteiro-manual-no-portal-real-antes-de-usar-uma-versão-nova).
 7. **Regressão:** todo bug corrigido ganha um teste que falha sem a correção.
