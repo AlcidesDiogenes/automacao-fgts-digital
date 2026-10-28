@@ -22,6 +22,40 @@ def gerar_pdf(destino: Path, linhas) -> Path:
     return destino
 
 
+def gerar_pdf_dominio(destino: Path, paginas) -> Path:
+    """
+    Gera um PDF que imita o layout do relatório "PAGAMENTO DE ENCARGOS" do Sistema Domínio
+    (estrutura copiada do relatório real, com TODOS os dados fictícios — LGPD).
+    Cada página é um dict: doc ("11.444.777/0001-61" ou CPF), tipo_doc ("CNPJ"/"CPF"),
+    razao, competencia ("09/2026") e linhas (corpo do relatório, uma string por linha).
+    """
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    c = canvas.Canvas(str(destino))
+    for pag in paginas:
+        comp = pag.get("competencia", "09/2026")
+        cabecalho = [
+            pag["doc"],
+            f"{comp} a {comp}",
+            "Empresa:",
+            f"{pag.get('tipo_doc', 'CNPJ')}:",
+            "Competência:",
+            pag["razao"],
+            "PAGAMENTO DE ENCARGOS",
+            "10:00:00",
+            "01/10/2026",
+            "1/1Página:",
+            "Emissão:",
+            "Horas:",
+        ]
+        y = 800
+        for linha in cabecalho + list(pag["linhas"]) + ["ESCRITORIO CONTABIL FICTICIO S/S"]:
+            c.drawString(40, y, linha)
+            y -= 16
+        c.showPage()
+    c.save()
+    return destino
+
+
 @pytest.fixture
 def pdf_factory(tmp_path):
     def _criar(nome: str, linhas) -> Path:

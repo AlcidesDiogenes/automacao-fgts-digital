@@ -50,3 +50,6 @@ __pycache__/
 *.log
 .DS_Store
 Thumbs.db
+
+# Quadros intermediários do GIF gerados por scripts/generate_assets.py
+docs/assets/temp_frames/
