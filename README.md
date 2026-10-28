@@ -295,7 +295,8 @@ automacao-fgts-digital/
 │   ├── assets/                 # Imagens, diagramas e GIFs do README
 │   └── decisoes/               # Registro de decisões técnicas (ADR)
 ├── scripts/
-│   └── generate_assets.py      # Gerador automatizado de assets visuais
+│   ├── generate_assets.py      # Gerador automatizado de assets visuais
+│   └── diagnostico/            # Scripts manuais que acessam o portal real (não são testes)
 ├── src/
 │   ├── core/                   # Módulos de apoio (navegador e Excel)
 │   │   ├── browser.py          # Abertura/conexão do Chrome (CDP 9222) com certificado do Windows
@@ -311,7 +312,7 @@ automacao-fgts-digital/
 │   └── ui/                     # Interface Gráfica CustomTkinter
 │       ├── app.py              # Janela principal com responsividade e KPIs
 │       └── theme.py            # Design tokens, cores e fontes
-├── tests/                      # Suíte de testes automatizados (pytest)
+├── tests/                      # Somente testes automatizados (pytest), sem acesso ao portal real
 ├── iniciar.bat                 # Script de inicialização rápida
 ├── main.py                     # Entrypoint da aplicação (GUI & CLI)
 ├── pytest.ini                  # Configurações do pytest
@@ -335,6 +336,23 @@ O projeto conta com testes unitários cobrindo o gerenciamento de certificados, 
 - `tests/test_ui_execucao.py` abre a janela real com robô e navegador falsos: contadores, mensagem final, botão *Parar* e nenhuma alteração de widget fora da thread principal.
 - `tests/test_browser_modos.py` confere a abertura do navegador (reaproveitar o Chrome via CDP, reservas) e garante que **nenhum caminho usa `client_certificates`** (regressão do captcha, ADR-0004).
 - `tests/test_logger.py` garante que o arquivo `data/logs/execucao_AAAA-MM-DD.log` é criado.
+
+A pasta `tests/` contém **somente testes automáticos**: nenhum deles acessa o portal real (o `pytest` roda tudo, sem exclusões).
+
+### Diagnóstico manual (portal real)
+
+Scripts em `scripts/diagnostico/` abrem o FGTS Digital de verdade com o certificado instalado no Windows. Não fazem parte da suíte e podem exigir captcha resolvido pelo operador. Rode na raiz do projeto:
+
+| Script | Quando usar |
+| :--- | :--- |
+| `login_real.py` | Conferir se o login do robô ainda funciona (mostra SUCESSO/FALHA e salva `data/logs/tela_pos_login.png`). |
+| `debug_govbr_dom.py` | O Gov.br mudou a tela de login: lista os seletores do botão "Seu certificado digital" e acompanha o redirecionamento. |
+
+```powershell
+.\venv\Scripts\python.exe scripts\diagnostico\login_real.py
+```
+
+Para conferir valores no portal sem emitir guias, use a própria linha de comando: `main.py --cli --conferir`.
 
 ---
 

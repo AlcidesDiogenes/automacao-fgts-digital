@@ -1,8 +1,18 @@
+"""
+Diagnóstico manual: inspeciona a tela de login do Gov.br (seletores do botão
+'Seu certificado digital'), clica nele e acompanha o redirecionamento por 15 s.
+Útil quando o Gov.br muda a tela de login. Salva screenshot em data/logs/apos_clique_cert.png.
+Acessa o portal real (não é teste automático).
+
+Uso (na raiz do projeto):
+    venv/Scripts/python.exe scripts/diagnostico/debug_govbr_dom.py
+"""
+
 import sys
 from pathlib import Path
 import time
 
-ROOT_DIR = Path(__file__).resolve().parent.parent
+ROOT_DIR = Path(__file__).resolve().parents[2]  # scripts/diagnostico/ -> raiz do projeto
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
@@ -70,7 +80,7 @@ def debug_govbr():
             print("Botão de certificado não está visível!")
 
         # Screenshot pós-clique
-        pos_foto = Path("data/logs/apos_clique_cert.png")
+        pos_foto = settings.LOGS_DIR / "apos_clique_cert.png"
         page.screenshot(path=str(pos_foto))
         print(f"Screenshot salva em: {pos_foto}")
 

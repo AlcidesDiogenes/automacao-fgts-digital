@@ -1,13 +1,17 @@
 """
-Script de teste de autenticação real no FGTS Digital.
-Abre o navegador, tenta autenticar com o certificado do .env e registra os passos.
+Diagnóstico manual: login real no FGTS Digital pelo robô (FGTSDigitalBot.login).
+Usa o certificado instalado no Windows, informa SUCESSO/FALHA e salva um screenshot
+da tela final em data/logs/tela_pos_login.png. Acessa o portal real (não é teste automático).
+
+Uso (na raiz do projeto):
+    venv/Scripts/python.exe scripts/diagnostico/login_real.py
 """
 
 import sys
 from pathlib import Path
 
 # Garante inclusão do diretório raiz no PYTHONPATH
-ROOT_DIR = Path(__file__).resolve().parent.parent
+ROOT_DIR = Path(__file__).resolve().parents[2]  # scripts/diagnostico/ -> raiz do projeto
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
@@ -32,7 +36,7 @@ def testar_login_real():
         print(f"URL Final: {page.url}")
         
         # Salva screenshot da tela final pós-login
-        foto = Path("data/logs/tela_pos_login.png")
+        foto = settings.LOGS_DIR / "tela_pos_login.png"
         foto.parent.mkdir(parents=True, exist_ok=True)
         page.screenshot(path=str(foto))
         print(f"Screenshot salva em: {foto}")
