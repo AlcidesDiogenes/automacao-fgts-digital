@@ -5,10 +5,17 @@ Carrega variáveis de ambiente e define caminhos e padrões do sistema.
 
 from pathlib import Path
 import os
+import sys
 from dotenv import load_dotenv
 
-# Diretório raiz do projeto
-BASE_DIR = Path(__file__).resolve().parent.parent
+# Diretório raiz do projeto e diretório de recursos estáticos (PyInstaller)
+if getattr(sys, "frozen", False):
+    # Executável empacotado via PyInstaller
+    BASE_DIR = Path(sys.executable).resolve().parent
+    RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", BASE_DIR))
+else:
+    BASE_DIR = Path(__file__).resolve().parent.parent
+    RESOURCE_DIR = BASE_DIR
 
 # Tenta carregar o arquivo .env do diretório config ou da raiz
 env_config = BASE_DIR / "config" / ".env"
@@ -18,14 +25,42 @@ if env_config.exists():
 elif env_root.exists():
     load_dotenv(env_root)
 
-# Configurações de caminhos (sempre absolutos, a partir da raiz do projeto,
-# para não depender da pasta de onde o programa foi aberto)
-DATA_DIR = BASE_DIR / "data"
+# Configurações de caminhos com verificação de permissão de escrita para ambientes instalados
+def _resolver_pasta_dados() -> Path:
+    padrao = BASE_DIR / "data"
+    try:
+        padrao.mkdir(parents=True, exist_ok=True)
+        teste = padrao / ".perm_check"
+        teste.write_text("ok", encoding="utf-8")
+        teste.unlink()
+        return padrao
+    except (PermissionError, OSError):
+        appdata = Path(os.getenv("LOCALAPPDATA", str(Path.home()))) / "FGTS Digital" / "data"
+        appdata.mkdir(parents=True, exist_ok=True)
+        return appdata
+
+DATA_DIR = _resolver_pasta_dados()
 DEFAULT_OUTPUT_DIR = DATA_DIR / "output"
 DEFAULT_EXCEL_PATH = DATA_DIR / "empresas_modelo.xlsx"
 LOGS_DIR = DATA_DIR / "logs"
 BROWSER_PROFILE_DIR = DATA_DIR / "browser_profile"
-PARAMETROS_PATH = BASE_DIR / "config" / "parametros.json"
+
+def _resolver_parametros_path() -> Path:
+    padrao = BASE_DIR / "config" / "parametros.json"
+    try:
+        padrao.parent.mkdir(parents=True, exist_ok=True)
+        if padrao.exists():
+            return padrao
+        teste = padrao.parent / ".perm_check"
+        teste.write_text("ok", encoding="utf-8")
+        teste.unlink()
+        return padrao
+    except (PermissionError, OSError):
+        appdata_cfg = Path(os.getenv("LOCALAPPDATA", str(Path.home()))) / "FGTS Digital" / "config"
+        appdata_cfg.mkdir(parents=True, exist_ok=True)
+        return appdata_cfg / "parametros.json"
+
+PARAMETROS_PATH = _resolver_parametros_path()
 
 
 def carregar_parametros() -> dict:

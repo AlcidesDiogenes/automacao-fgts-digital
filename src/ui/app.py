@@ -41,6 +41,21 @@ class FGTSDigitalApp(ctk.CTk):
         self.geometry("1180x780")
         self.minsize(980, 580)
 
+        # Configura identificador do processo no Windows para agrupar e exibir o ícone correto na barra de tarefas
+        try:
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("br.gov.fgtsdigital.automacao")
+        except Exception:
+            pass
+
+        # Ícone da janela e barra de tarefas
+        icone_path = settings.RESOURCE_DIR / "assets" / "icon.ico"
+        if icone_path.exists():
+            try:
+                self.iconbitmap(str(icone_path))
+            except Exception:
+                pass
+
         # Variáveis de estado
         self.excel_path_var = tk.StringVar(value=str(settings.DEFAULT_EXCEL_PATH))
         self.output_dir_var = tk.StringVar(value=str(settings.DEFAULT_OUTPUT_DIR))

@@ -28,6 +28,9 @@ Sistema corporativo de alto desempenho desenvolvido para escritórios de contabi
   - [2. Modo "Apenas Conferir" (Auditoria de Folha)](#2-modo-apenas-conferir-auditoria-de-folha)
 - [Autenticação e Certificados Digitais](#-autenticação-e-certificados-digitais)
 - [Instalação e Configuração](#-instalação-e-configuração)
+  - [1. Instalador Profissional Windows (Recomendado)](#1-instalador-profissional-windows-recomendado)
+  - [2. Execução via Código-Fonte (Desenvolvedores)](#2-execução-via-código-fonte-desenvolvedores)
+  - [3. Pipeline de Build e Geração do Instalador](#3-pipeline-de-build-e-geração-do-instalador)
 - [Guia de Uso Passo a Passo](#-guia-de-uso-passo-a-passo)
 - [Personalização de Nomenclatura](#-personalização-de-nomenclatura)
 - [Estrutura do Projeto](#-estrutura-do-projeto)
@@ -241,35 +244,73 @@ O robô autentica no Gov.br **somente com o certificado digital instalado no Win
 
 ## 📦 Instalação e Configuração
 
-### Pré-requisitos
-- **Windows 10 ou 11** (64 bits).
-- **Python 3.12** (versão testada) instalado e adicionado ao `PATH`.
-- Google Chrome ou Chromium instalado.
+O sistema pode ser utilizado de duas formas: através do **Instalador Oficial para Windows** (recomendado para escritórios de contabilidade e operadores de DP) ou executado diretamente do **código-fonte** (para desenvolvedores).
 
-### 1. Clonar o Repositório
-```bash
+---
+
+### 1. Instalador Profissional Windows (Recomendado)
+
+O instalador oficial (`FGTS_Digital_Instalador_v1.0.0.exe`) é totalmente autocontido: **não exige Python pré-instalado nem configuração de terminal**.
+
+#### Características do Instalador:
+- **Assistente Nativo em Português (pt-BR)** baseado em Inno Setup 6 com compressão ultra-avançada LZMA2.
+- **Instalação Flexível**: Permite instalação no modo do usuário (`%LOCALAPPDATA%\Programs\FGTS Digital`) sem requerer senha de administrador, ou por máquina para todos os usuários com elevação UAC.
+- **Atalhos Oficiais**: Cria atalhos com ícone corporativo multi-resolução na Área de Trabalho e no Menu Iniciar.
+- **Desinstalador Limpo**: Integração completa com o "Aplicativos Instalados" do Windows (Painel de Controle), permitindo desinstalação segura e preservando os relatórios gerados pelo usuário.
+- **Executáveis Disponibilizados**:
+  - `FGTS_Digital.exe`: Interface gráfica nativa (sem janela preta de console).
+  - `FGTS_Digital_Console.exe`: Modo diagnóstico com console visível para depuração ou execução automatizada via scripts CLI.
+
+---
+
+### 2. Execução via Código-Fonte (Desenvolvedores)
+
+#### Pré-requisitos
+- **Windows 10 ou 11** (64 bits).
+- **Python 3.12** instalado e adicionado ao `PATH`.
+- Google Chrome instalado no Windows (utilizado para autenticação mTLS com certificado digital).
+
+#### Passo a Passo para Desenvolvimento:
+```powershell
+# 1. Clonar o repositório
 git clone https://github.com/AlcidesDiogenes/automacao-fgts-digital.git
 cd automacao-fgts-digital
-```
 
-### 2. Criar e Ativar o Ambiente Virtual
-```powershell
+# 2. Criar e ativar o ambiente virtual
 python -m venv venv
 .\venv\Scripts\Activate.ps1
-```
 
-### 3. Instalar Dependências
-```powershell
+# 3. Instalar dependências
 pip install -r requirements.txt
 playwright install chromium
-```
 
-### 4. Configurar Arquivo `.env` (Opcional)
-Se desejar definir configurações padrão via linha de comando ou CLI:
-```powershell
+# 4. Configurar variáveis de ambiente (opcional)
 cp config/.env.example config/.env
 ```
-Edite `config/.env` com seus caminhos preferenciais.
+
+---
+
+### 3. Pipeline de Build e Geração do Instalador
+
+Para gerar um novo instalador compilado com todas as atualizações de código:
+
+```mermaid
+flowchart LR
+    A["compilar_instalador.bat"] --> B["1. Gerar Assets (.ico & banners)"]
+    B --> C["2. PyInstaller (onedir)"]
+    C --> D["3. Inno Setup (ISCC)"]
+    D --> E["📦 dist_installer/FGTS_Digital_Instalador_v1.0.0.exe"]
+```
+
+Basta executar o script em lote na raiz do projeto:
+```powershell
+.\compilar_instalador.bat
+```
+O script automatiza todo o processo em 4 etapas:
+1. Geração dos assets gráficos (`assets/icon.ico`, `wizard_welcome.bmp`, `wizard_header.bmp`).
+2. Empacotamento das dependências (`CustomTkinter`, `Playwright`, `pdfminer`, `reportlab`) com PyInstaller (`fgts_digital.spec`).
+3. Compilação do instalador via Inno Setup (`installer/FGTS_Digital_Setup.iss`).
+4. Gravação do arquivo final em `dist_installer\`.
 
 ---
 

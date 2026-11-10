@@ -53,3 +53,8 @@ Thumbs.db
 
 # Quadros intermediários do GIF gerados por scripts/generate_assets.py
 docs/assets/temp_frames/
+
+# Builds, PyInstaller e Instaladores compilados
+build/
+dist/
+dist_installer/
