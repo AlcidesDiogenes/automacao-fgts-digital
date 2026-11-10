@@ -24,7 +24,9 @@ from src.modules.fgts_digital.parser import normalizar_competencia, limpar_cnpj,
 from src.modules.folha_relatorio.parser_pdf import RelatorioFolhaParser
 from src.utils.logger import logger, add_log_listener, remove_log_listener
 from src.ui.theme import CORES, RAIO, FONTE_FAMILIA, FONTE_MONO
+from src.core.updater import UpdaterManager
 from config import settings
+from config.version import VERSION, GITHUB_REPO
 
 # Configuração de tema do CustomTkinter
 ctk.set_appearance_mode("Dark")
@@ -121,9 +123,16 @@ class FGTSDigitalApp(ctk.CTk):
         self._carregar_e_exibir_empresas()
         self._atualizar_cards_kpi()
 
+        # Variáveis de Atualização OTA (Over-The-Air)
+        self.dados_atualizacao = None
+        self.updater = UpdaterManager()
+
         # Se houver PDF de exemplo padrão, processa na inicialização
         if self.pdf_relatorio_path_var.get() and Path(self.pdf_relatorio_path_var.get()).exists():
             self.after(400, self._processar_pdf_folha)
+
+        # Checagem não-bloqueante de atualizações em segundo plano
+        self.after(2500, self._iniciar_checagem_atualizacao_segundo_plano)
 
     def _construir_layout_principal(self):
         """Monta o grid mestre: Sidebar lateral esquerda e Container de Conteúdo à direita."""
@@ -220,13 +229,23 @@ class FGTSDigitalApp(ctk.CTk):
         self.opt_tema.set("Dark")
         self.opt_tema.pack(fill="x", pady=(0, 10))
 
-        lbl_versao = ctk.CTkLabel(
+        self.lbl_versao_sidebar = ctk.CTkLabel(
             footer_sidebar,
-            text="mTLS & CDP",
+            text=f"v{VERSION} • mTLS & CDP",
             font=ctk.CTkFont(size=10),
             text_color="#64748B"
         )
-        lbl_versao.pack(anchor="w")
+        self.lbl_versao_sidebar.pack(anchor="w")
+
+        self.btn_update_sidebar = ctk.CTkButton(
+            footer_sidebar,
+            text="🚀 Nova Versão Disponível",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            fg_color=CORES["accent_teal"],
+            hover_color=CORES["primary_dark"],
+            height=28,
+            command=self._exibir_modal_atualizacao
+        )
 
         # ---------------------------------------------------------------------
         # 2. CONTAINER DE CONTEÚDO PRINCIPAL (Header, KPIs, Painéis)
@@ -1182,7 +1201,50 @@ class FGTSDigitalApp(ctk.CTk):
         )
         lbl_dica.grid(row=5, column=0, columnspan=3, padx=15, pady=(4, 12), sticky="w")
 
-        # Card 4: Barra de Ação (Salvar / Restaurar)
+        # Card 4: Atualizações do Sistema (OTA via GitHub)
+        card_update = ctk.CTkFrame(
+            self.frame_parametros,
+            corner_radius=RAIO["md"],
+            fg_color=(CORES["card_light"], CORES["card_dark"]),
+            border_width=1,
+            border_color=(CORES["card_border_light"], CORES["card_border_dark"])
+        )
+        card_update.grid(row=3, column=0, sticky="ew", pady=(0, 15), padx=(0, 6))
+        card_update.grid_columnconfigure(0, weight=1)
+
+        box_update = ctk.CTkFrame(card_update, fg_color="transparent")
+        box_update.pack(fill="x", padx=15, pady=12)
+
+        box_update_textos = ctk.CTkFrame(box_update, fg_color="transparent")
+        box_update_textos.pack(side="left", fill="both", expand=True)
+
+        lbl_tit_upd = ctk.CTkLabel(
+            box_update_textos,
+            text="🚀 Atualizações do Sistema (OTA via GitHub)",
+            font=ctk.CTkFont(family=FONTE_FAMILIA, size=14, weight="bold")
+        )
+        lbl_tit_upd.pack(anchor="w")
+
+        self.lbl_versao_info = ctk.CTkLabel(
+            box_update_textos,
+            text=f"Versão instalada: v{VERSION}  •  Repositório: {GITHUB_REPO}",
+            font=ctk.CTkFont(size=12),
+            text_color="#94A3B8"
+        )
+        self.lbl_versao_info.pack(anchor="w", pady=(2, 0))
+
+        self.btn_verificar_update = ctk.CTkButton(
+            box_update,
+            text="🔍 Verificar Atualizações",
+            width=180,
+            height=34,
+            fg_color="#334155",
+            hover_color="#475569",
+            command=self._verificar_atualizacao_manual
+        )
+        self.btn_verificar_update.pack(side="right")
+
+        # Card 5: Barra de Ação (Salvar / Restaurar)
         card_acoes = ctk.CTkFrame(
             self.frame_parametros,
             corner_radius=RAIO["md"],
@@ -1190,7 +1252,7 @@ class FGTSDigitalApp(ctk.CTk):
             border_width=1,
             border_color=(CORES["card_border_light"], CORES["card_border_dark"])
         )
-        card_acoes.grid(row=3, column=0, sticky="ew", pady=(0, 20), padx=(0, 6))
+        card_acoes.grid(row=4, column=0, sticky="ew", pady=(0, 20), padx=(0, 6))
         card_acoes.grid_columnconfigure(0, weight=1)
 
         box_botoes_salvar = ctk.CTkFrame(card_acoes, fg_color="transparent")
@@ -1947,6 +2009,213 @@ class FGTSDigitalApp(ctk.CTk):
                 hover_color=CORES["success_hover"],
                 state="normal"
             )
+
+    # -------------------------------------------------------------------------
+    # ATUALIZAÇÕES OTA (Over-The-Air via GitHub Releases)
+    # -------------------------------------------------------------------------
+
+    def _iniciar_checagem_atualizacao_segundo_plano(self):
+        """Dispara verificação não-bloqueante de atualizações via GitHub Releases em background."""
+        def tarefa():
+            try:
+                info = self.updater.verificar_atualizacao(timeout_s=8)
+                if info and info.get("tem_atualizacao"):
+                    self._na_ui(self._notificar_atualizacao_encontrada, info)
+            except Exception as e:
+                logger.debug(f"Checagem OTA em background: {e}")
+
+        threading.Thread(target=tarefa, daemon=True).start()
+
+    def _notificar_atualizacao_encontrada(self, info: Dict[str, Any]):
+        """Atualiza a UI para sinalizar que há uma nova versão disponível."""
+        self.dados_atualizacao = info
+        versao_remota = info.get("versao_remota", "")
+
+        # Exibe o botão de atualização na sidebar
+        if hasattr(self, "btn_update_sidebar"):
+            self.btn_update_sidebar.configure(text=f"🚀 Instalar v{versao_remota}")
+            self.btn_update_sidebar.pack(fill="x", pady=(6, 0))
+
+        # Atualiza elementos do painel de parâmetros se já construídos
+        if hasattr(self, "lbl_versao_info"):
+            self.lbl_versao_info.configure(
+                text=f"Versão instalada: v{VERSION}  •  Disponível: v{versao_remota} 🌟",
+                text_color=CORES["accent_teal"]
+            )
+        if hasattr(self, "btn_verificar_update"):
+            self.btn_verificar_update.configure(
+                text=f"🚀 Instalar v{versao_remota}",
+                fg_color=CORES["accent_teal"],
+                hover_color=CORES["primary_dark"]
+            )
+
+    def _verificar_atualizacao_manual(self):
+        """Ação do botão 'Verificar Atualizações' no painel de Parâmetros."""
+        if self.dados_atualizacao:
+            self._exibir_modal_atualizacao()
+            return
+
+        if hasattr(self, "btn_verificar_update"):
+            self.btn_verificar_update.configure(text="🔍 Verificando...", state="disabled")
+
+        def tarefa():
+            try:
+                info = self.updater.verificar_atualizacao(timeout_s=12)
+                def retorno():
+                    if hasattr(self, "btn_verificar_update"):
+                        self.btn_verificar_update.configure(state="normal")
+                    if info and info.get("tem_atualizacao"):
+                        self._notificar_atualizacao_encontrada(info)
+                        self._exibir_modal_atualizacao()
+                    else:
+                        if hasattr(self, "btn_verificar_update"):
+                            self.btn_verificar_update.configure(text="🔍 Verificar Atualizações")
+                        messagebox.showinfo(
+                            "Atualizações",
+                            f"Você já está utilizando a versão mais recente (v{VERSION})!\nNenhuma nova atualização foi encontrada no repositório."
+                        )
+                self._na_ui(retorno)
+            except Exception as e:
+                def on_err():
+                    if hasattr(self, "btn_verificar_update"):
+                        self.btn_verificar_update.configure(text="🔍 Verificar Atualizações", state="normal")
+                    messagebox.showwarning("Aviso", f"Não foi possível verificar atualizações no momento:\n{e}")
+                self._na_ui(on_err)
+
+        threading.Thread(target=tarefa, daemon=True).start()
+
+    def _exibir_modal_atualizacao(self):
+        """Abre janela modal customizada exibindo detalhes da nova versão e barra de download."""
+        info = self.dados_atualizacao
+        if not info:
+            return
+
+        versao_remota = info.get("versao_remota", "")
+        titulo = info.get("titulo", f"Versão {versao_remota}")
+        changelog = info.get("changelog", "Melhorias de desempenho e correções gerais.")
+        download_url = info.get("download_url", "")
+        nome_arquivo = info.get("nome_arquivo", f"FGTS_Digital_Instalador_v{versao_remota}.exe")
+
+        janela = ctk.CTkToplevel(self)
+        janela.title("Atualização do Sistema - FGTS Digital")
+        janela.geometry("540x440")
+        janela.resizable(False, False)
+        janela.transient(self)
+        janela.grab_set()
+
+        # Posiciona no centro da tela principal
+        try:
+            x = self.winfo_x() + (self.winfo_width() // 2) - 270
+            y = self.winfo_y() + (self.winfo_height() // 2) - 220
+            janela.geometry(f"+{x}+{y}")
+        except Exception:
+            pass
+
+        # Conteúdo do Modal
+        lbl_head = ctk.CTkLabel(
+            janela,
+            text=f"🚀 Nova Versão Disponível: v{versao_remota}",
+            font=ctk.CTkFont(family=FONTE_FAMILIA, size=18, weight="bold"),
+            text_color=CORES["accent_teal"]
+        )
+        lbl_head.pack(padx=20, pady=(20, 5), anchor="w")
+
+        lbl_sub = ctk.CTkLabel(
+            janela,
+            text=f"Versão atual: v{VERSION}  •  {titulo}",
+            font=ctk.CTkFont(size=12),
+            text_color="#94A3B8"
+        )
+        lbl_sub.pack(padx=20, pady=(0, 15), anchor="w")
+
+        lbl_sec = ctk.CTkLabel(
+            janela,
+            text="O que há de novo nesta versão:",
+            font=ctk.CTkFont(size=13, weight="bold")
+        )
+        lbl_sec.pack(padx=20, pady=(0, 5), anchor="w")
+
+        txt_changelog = ctk.CTkTextbox(janela, height=130, font=ctk.CTkFont(size=12))
+        txt_changelog.pack(fill="x", padx=20, pady=(0, 15))
+        txt_changelog.insert("1.0", changelog)
+        txt_changelog.configure(state="disabled")
+
+        bar_progresso = ctk.CTkProgressBar(janela, height=12, corner_radius=6)
+        bar_progresso.set(0.0)
+        lbl_progresso = ctk.CTkLabel(
+            janela,
+            text="Pronto para baixar e atualizar.",
+            font=ctk.CTkFont(size=12),
+            text_color="#94A3B8"
+        )
+
+        frame_botoes = ctk.CTkFrame(janela, fg_color="transparent")
+        frame_botoes.pack(fill="x", padx=20, pady=(10, 20), side="bottom")
+
+        btn_fechar = ctk.CTkButton(
+            frame_botoes,
+            text="Lembrar Mais Tarde",
+            width=140,
+            fg_color="#334155",
+            hover_color="#475569",
+            command=janela.destroy
+        )
+        btn_fechar.pack(side="left")
+
+        def iniciar_download():
+            btn_baixar.configure(state="disabled", text="Baixando...")
+            btn_fechar.configure(state="disabled")
+            lbl_progresso.pack(padx=20, pady=(0, 5), anchor="w")
+            bar_progresso.pack(fill="x", padx=20, pady=(0, 10))
+
+            def tarefa_download():
+                try:
+                    def on_progresso(pct, baixados, total):
+                        mb_b = baixados / (1024 * 1024)
+                        mb_t = total / (1024 * 1024)
+                        def atualiza():
+                            bar_progresso.set(pct / 100.0)
+                            lbl_progresso.configure(
+                                text=f"Baixando atualização: {pct:.1f}% ({mb_b:.1f} MB de {mb_t:.1f} MB)..."
+                            )
+                        self._na_ui(atualiza)
+
+                    caminho_exe = UpdaterManager.baixar_instalador(
+                        download_url,
+                        nome_arquivo,
+                        callback_progresso=on_progresso
+                    )
+
+                    def concluir():
+                        lbl_progresso.configure(
+                            text="✔ Download concluído! Reiniciando para atualizar...",
+                            text_color=CORES["success"]
+                        )
+                        janela.after(1200, lambda: UpdaterManager.aplicar_atualizacao_e_reiniciar(caminho_exe))
+
+                    self._na_ui(concluir)
+
+                except Exception as e:
+                    def erro():
+                        lbl_progresso.configure(
+                            text=f"Erro no download: {e}",
+                            text_color=CORES["danger"]
+                        )
+                        btn_baixar.configure(state="normal", text="Tentar Novamente")
+                        btn_fechar.configure(state="normal")
+                    self._na_ui(erro)
+
+            threading.Thread(target=tarefa_download, daemon=True).start()
+
+        btn_baixar = ctk.CTkButton(
+            frame_botoes,
+            text=f"⬇ Baixar e Atualizar (v{versao_remota})",
+            font=ctk.CTkFont(weight="bold"),
+            fg_color=CORES["success"],
+            hover_color=CORES["success_hover"],
+            command=iniciar_download
+        )
+        btn_baixar.pack(side="right")
 
 
 def iniciar_aplicacao():

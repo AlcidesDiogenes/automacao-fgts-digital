@@ -244,3 +244,18 @@ ALERTA_PROCURACAO_INVALIDA = [
     "div:has-text('não possui procuração eletrônica ativa')"
 ]
 
+# Indicadores de carregamento e overlays do Serpro / Gov.br (BR-Design / Angular)
+INDICADORES_CARREGAMENTO = [
+    ".br-loading",
+    "ngx-spinner",
+    "div.loading",
+    "app-loading",
+    "div.spinner",
+    "div.loader",
+    ".loading-spinner",
+    ".loading-overlay",
+    "br-scrim",
+    "div.scrim",
+    "[role='progressbar']"
+]
+

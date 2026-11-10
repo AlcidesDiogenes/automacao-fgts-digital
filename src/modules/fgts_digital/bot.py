@@ -105,6 +105,27 @@ class FGTSDigitalBot:
         except Exception:
             return False
 
+    def _aguardar_carregamento_estabilizar(self, timeout_ms: int = 30000) -> None:
+        """
+        Aguarda o desaparecimento de spinners, overlays e telas de loading do portal Serpro/Gov.br,
+        garantindo que o Angular e as requisições assíncronas tenham estabilizado.
+        """
+        limite = time.time() + (timeout_ms / 1000.0)
+        time.sleep(0.3)
+        while time.time() < limite:
+            tem_loading = False
+            for s in sel.INDICADORES_CARREGAMENTO:
+                try:
+                    el = self.page.locator(s).first
+                    if el.is_visible():
+                        tem_loading = True
+                        break
+                except Exception:
+                    continue
+            if not tem_loading:
+                break
+            time.sleep(0.3)
+
     def login(self) -> bool:
         """
         Navega para o portal do FGTS Digital e realiza login via Gov.br com Certificado Digital.
@@ -536,18 +557,21 @@ class FGTSDigitalBot:
 
         return 0.0
 
-    def _selecionar_competencia_e_pesquisar(self, competencia: str) -> bool:
+    def _selecionar_competencia_e_pesquisar(self, competencia: str, timeout_ms: int = 35000) -> bool:
         """
         Na tela de Emissão de Guia Rápida, seleciona a competência no dropdown <ng-select>
         e clica no botão 'Pesquisar'.
         """
         logger.info(f"Configurando competência '{competencia}' e executando pesquisa...")
         try:
+            # Aguarda eventual spinner/carregamento inicial antes de procurar os componentes
+            self._aguardar_carregamento_estabilizar(timeout_ms=10000)
+
             # Aguarda o formulário de filtros OU o aviso de 'sem débitos'. Sem débito em aberto
             # (COB0003), o portal não exibe o filtro de competência (confirmado em 27/10/2026).
             self.page.wait_for_selector(
                 "ng-select, button:has-text('Pesquisar'), " + ", ".join(sel.ALERTA_SEM_DEBITOS),
-                timeout=10000
+                timeout=timeout_ms
             )
             if self._elemento_visivel(sel.ALERTA_SEM_DEBITOS, timeout_ms=0) and not self.page.locator("ng-select").first.is_visible():
                 logger.info("Portal informa que não há débitos em aberto (COB0003); filtro de competência não exibido.")
@@ -583,7 +607,7 @@ class FGTSDigitalBot:
 
                 # Clica na opção correspondente na lista suspensa
                 opcao = self.page.locator(f".ng-dropdown-panel .ng-option:has-text('{competencia}')").first
-                if self._aguardar_visivel(opcao, 2000):
+                if self._aguardar_visivel(opcao, 3000):
                     opcao.click()
                     logger.info(f"Opção '{competencia}' clicada no dropdown.")
                 else:
@@ -601,11 +625,11 @@ class FGTSDigitalBot:
                 self._clicar_primeiro_disponivel(sel.GUIA_RAPIDA_BTN_PESQUISAR, timeout_ms=3000)
 
             # Aguarda a resposta da pesquisa (débitos carregados ou alerta sem débitos)
-            time.sleep(1.5)
+            self._aguardar_carregamento_estabilizar(timeout_ms=25000)
             try:
                 self.page.wait_for_selector(
                     "button:has-text('Emitir guia'), div:has-text('Total Devedor'), div:has-text('COB0003'), div:has-text('Não há débitos'), .alerta-sem-debitos",
-                    timeout=12000
+                    timeout=25000
                 )
             except Exception:
                 logger.warning("Tempo limite ao aguardar resultado da pesquisa de débitos.")
@@ -993,17 +1017,30 @@ class FGTSDigitalBot:
             # 1. Acessar menu Gestão de Guias -> Emissão de Guia Rápida
             logger.info(f"{cnpj_fmt}: Acessando Gestão de Guias...")
             if "emissao-guia-rapida" not in self.page.url:
-                if not self._clicar_primeiro_disponivel(sel.CARD_GESTAO_GUIAS, timeout_ms=4000):
+                if not self._clicar_primeiro_disponivel(sel.CARD_GESTAO_GUIAS, timeout_ms=8000):
                     self.page.goto("https://fgtsdigital.sistema.gov.br/cobranca/#/gestao-guias/emissao-guia-rapida", wait_until="domcontentloaded")
                 else:
-                    time.sleep(1.5)
-                    self._clicar_primeiro_disponivel(sel.CARD_GUIA_RAPIDA, timeout_ms=5000)
-                time.sleep(2.0)
+                    self._aguardar_carregamento_estabilizar(timeout_ms=10000)
+                    if not self._clicar_primeiro_disponivel(sel.CARD_GUIA_RAPIDA, timeout_ms=8000):
+                        self.page.goto("https://fgtsdigital.sistema.gov.br/cobranca/#/gestao-guias/emissao-guia-rapida", wait_until="domcontentloaded")
+                self._aguardar_carregamento_estabilizar(timeout_ms=15000)
 
             # 2. Selecionar competência e clicar em Pesquisar
             sucesso_pesquisa = self._selecionar_competencia_e_pesquisar(competencia)
             if not sucesso_pesquisa:
-                logger.warning(f"{cnpj_fmt}: Não foi possível executar a pesquisa para a competência {competencia}.")
+                logger.warning(f"{cnpj_fmt}: Primeira tentativa de pesquisa falhou. Tentando recarregar tela de emissão...")
+                self.page.goto("https://fgtsdigital.sistema.gov.br/cobranca/#/gestao-guias/emissao-guia-rapida", wait_until="domcontentloaded")
+                self._aguardar_carregamento_estabilizar(timeout_ms=15000)
+                sucesso_pesquisa = self._selecionar_competencia_e_pesquisar(competencia)
+
+            if not sucesso_pesquisa:
+                msg = f"A tela de emissão de guia rápida não concluiu o carregamento para {competencia} (timeout/instabilidade no FGTS Digital)."
+                logger.error(f"{cnpj_fmt}: {msg}")
+                resultado["status"] = "Erro de Carregamento no Portal"
+                resultado["detalhes"] = msg
+                self.page.goto("https://fgtsdigital.sistema.gov.br/portal/servicos", wait_until="domcontentloaded")
+                time.sleep(1.0)
+                return resultado
 
             # 3. Verifica mensagens de status/bloqueio (ex: COB0003 - Não há débitos de interesse)
             if self._elemento_visivel(sel.ALERTA_SEM_DEBITOS, timeout_ms=0):

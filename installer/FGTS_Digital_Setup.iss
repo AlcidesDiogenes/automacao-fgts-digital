@@ -2,7 +2,7 @@
 ; Sistema: Automação FGTS Digital
 
 #define MyAppName "Automação FGTS Digital"
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "1.0.1"
 #define MyAppPublisher "Alcides Diógenes"
 #define MyAppURL "https://github.com/AlcidesDiogenes/automacao-fgts-digital"
 #define MyAppExeName "FGTS_Digital.exe"
@@ -21,7 +21,7 @@ DefaultDirName={autopf}\FGTS Digital
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
 OutputDir=..\dist_installer
-OutputBaseFilename=FGTS_Digital_Instalador_v1.0.0
+OutputBaseFilename=FGTS_Digital_Instalador_v1.0.1
 SetupIconFile=..\assets\icon.ico
 WizardImageFile=..\assets\wizard_welcome.bmp
 WizardSmallImageFile=..\assets\wizard_header.bmp

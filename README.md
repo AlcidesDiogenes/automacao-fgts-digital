@@ -248,12 +248,13 @@ O sistema pode ser utilizado de duas formas: através do **Instalador Oficial pa
 
 ---
 
-### 1. Instalador Profissional Windows (Recomendado)
+### 1. Instalador Profissional Windows & Atualização OTA (Recomendado)
 
-O instalador oficial (`FGTS_Digital_Instalador_v1.0.0.exe`) é totalmente autocontido: **não exige Python pré-instalado nem configuração de terminal**.
+O instalador oficial (`FGTS_Digital_Instalador_v1.0.1.exe`) é totalmente autocontido: **não exige Python pré-instalado nem configuração de terminal**.
 
 #### Características do Instalador:
 - **Assistente Nativo em Português (pt-BR)** baseado em Inno Setup 6 com compressão ultra-avançada LZMA2.
+- **Atualização Contínua OTA (Over-The-Air)**: O aplicativo consulta automaticamente em segundo plano as releases oficiais no GitHub. Havendo nova versão, avisa na tela e realiza o download e instalação silenciosa (`/SILENT /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS`) sem exigir desinstalação manual.
 - **Instalação Flexível**: Permite instalação no modo do usuário (`%LOCALAPPDATA%\Programs\FGTS Digital`) sem requerer senha de administrador, ou por máquina para todos os usuários com elevação UAC.
 - **Atalhos Oficiais**: Cria atalhos com ícone corporativo multi-resolução na Área de Trabalho e no Menu Iniciar.
 - **Desinstalador Limpo**: Integração completa com o "Aplicativos Instalados" do Windows (Painel de Controle), permitindo desinstalação segura e preservando os relatórios gerados pelo usuário.
@@ -299,7 +300,7 @@ flowchart LR
     A["compilar_instalador.bat"] --> B["1. Gerar Assets (.ico & banners)"]
     B --> C["2. PyInstaller (onedir)"]
     C --> D["3. Inno Setup (ISCC)"]
-    D --> E["📦 dist_installer/FGTS_Digital_Instalador_v1.0.0.exe"]
+    D --> E["📦 dist_installer/FGTS_Digital_Instalador_v1.0.1.exe"]
 ```
 
 Basta executar o script em lote na raiz do projeto:
