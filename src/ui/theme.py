@@ -9,7 +9,10 @@ CORES = {
     # Cores Principais
     "primary": "#1F497D",          # Azul Corporativo Escuro
     "primary_hover": "#16365C",
+    "primary_dark": "#16365C",
     "primary_light": "#EBF2FA",
+    "accent_teal": "#0D9488",      # Verde-azulado / Teal moderno para novidades e OTA
+    "accent_teal_hover": "#0F766E",
     
     # Cores de Ação e Destaque
     "success": "#16A34A",          # Verde esmeralda para execução e sucesso

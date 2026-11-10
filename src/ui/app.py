@@ -241,8 +241,8 @@ class FGTSDigitalApp(ctk.CTk):
             footer_sidebar,
             text="🚀 Nova Versão Disponível",
             font=ctk.CTkFont(size=11, weight="bold"),
-            fg_color=CORES["accent_teal"],
-            hover_color=CORES["primary_dark"],
+            fg_color=CORES.get("accent_teal", "#0D9488"),
+            hover_color=CORES.get("primary_dark", "#16365C"),
             height=28,
             command=self._exibir_modal_atualizacao
         )
@@ -2040,13 +2040,13 @@ class FGTSDigitalApp(ctk.CTk):
         if hasattr(self, "lbl_versao_info"):
             self.lbl_versao_info.configure(
                 text=f"Versão instalada: v{VERSION}  •  Disponível: v{versao_remota} 🌟",
-                text_color=CORES["accent_teal"]
+                text_color=CORES.get("accent_teal", "#0D9488")
             )
         if hasattr(self, "btn_verificar_update"):
             self.btn_verificar_update.configure(
                 text=f"🚀 Instalar v{versao_remota}",
-                fg_color=CORES["accent_teal"],
-                hover_color=CORES["primary_dark"]
+                fg_color=CORES.get("accent_teal", "#0D9488"),
+                hover_color=CORES.get("primary_dark", "#16365C")
             )
 
     def _verificar_atualizacao_manual(self):
@@ -2116,7 +2116,7 @@ class FGTSDigitalApp(ctk.CTk):
             janela,
             text=f"🚀 Nova Versão Disponível: v{versao_remota}",
             font=ctk.CTkFont(family=FONTE_FAMILIA, size=18, weight="bold"),
-            text_color=CORES["accent_teal"]
+            text_color=CORES.get("accent_teal", "#0D9488")
         )
         lbl_head.pack(padx=20, pady=(20, 5), anchor="w")
 
