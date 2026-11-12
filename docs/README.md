@@ -5,6 +5,7 @@
 | [README do projeto](../README.md) | Visão geral, funcionalidades, telas, instalação e uso. |
 | [Arquitetura](arquitetura.md) | Componentes, fluxo de uma empresa no lote, modelo de threads, integrações e tecnologias. |
 | [Desenvolvimento](desenvolvimento.md) | Ambiente, como rodar, configuração, estrutura de pastas, convenções, **fluxo de testes**, roteiro manual no portal real, imagens do README e checklist de mudança. |
+| [FGTS Digital — mapa do portal](fgts-digital-mapa-do-portal.md) | Menus, telas de consulta, APIs internas, códigos de mensagem, resultado da varredura de 11/11/2026 e oportunidades priorizadas. |
 | [Problemas conhecidos](problemas-conhecidos.md) | Pendências abertas com status e registro de causas raiz já resolvidas. |
 | [Decisões (ADR)](decisoes/README.md) | Decisões técnicas com contexto, alternativas e consequências. |
 
@@ -17,3 +18,4 @@
 - [ADR-0005](decisoes/ADR-0005-dados-de-navegador-fora-do-repositorio.md) — Dados de navegador fora do repositório
 - [ADR-0006](decisoes/ADR-0006-fluxo-de-testes.md) — Fluxo de testes
 - [ADR-0007](decisoes/ADR-0007-competencia-sempre-digitada.md) — Competência sempre digitada pelo usuário
+- [ADR-0008](decisoes/ADR-0008-guia-existente-nao-e-reemitida.md) — Guia já emitida não é reemitida; reimprime só se o valor for o do relatório

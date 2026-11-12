@@ -259,3 +259,23 @@ INDICADORES_CARREGAMENTO = [
     "[role='progressbar']"
 ]
 
+
+# Guia já emitida (ADR-0008). Confirmado no portal real em 12/11/2026: dentro do card Mensal, o bloco
+# "Guias relacionadas aguardando pagamento" tem um <a aria-label="Reimprimir guia"> por guia, com o número
+# da guia como texto; o clique baixa o PDF direto, sem modal e sem gerar guia nova.
+LINK_REIMPRIMIR_GUIA = [
+    "a[aria-label='Reimprimir guia']",
+    "[tooltip='Reimprimir guia']",
+    "a[title*='Reimprimir' i]",
+]
+
+# Modal que o portal abre ao clicar em "Emitir guia" quando a competência já tem guia
+# ("Gerar guia - Confirma nova emissão?", visto nos logs de 12/11/2026). Só contêineres de modal:
+# botões "Confirmar" soltos na página não contam.
+MODAL_CONFIRMACAO_EMISSAO = [
+    "modal-container",
+    ".modal.show",
+    "div[role='dialog']",
+    "br-modal",
+    ".br-modal",
+]

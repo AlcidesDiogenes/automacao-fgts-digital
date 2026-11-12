@@ -211,13 +211,16 @@ O robô segue a regra **"na dúvida, não emite"**. Cada empresa só tem guia em
 | **Card Mensal** | O botão *Emitir guia* clicado está dentro do card Mensal selecionado — nunca em card Rescisório ou residual. | `Card Mensal Não Identificado (Não Emitida)` |
 | **Divergência** | Diferença entre portal e folha até R$ 0,02. | `Divergência de Valores (Não Emitida)` |
 | **Conteúdo dos relatórios** | Cada relatório baixado contém a raiz do CNPJ e a competência. Se reprovar, a guia não é emitida. | `Falha na Validação do PDF (Relatório) - Guia Não Emitida` |
+| **Guia já emitida** | Se o card Mensal já tem guia aguardando pagamento, o robô **não emite outra**: reimprime a existente só se o valor bater com o relatório, e cancela o aviso "Confirma nova emissão?" ([ADR-0008](docs/decisoes/ADR-0008-guia-existente-nao-e-reemitida.md)). | `Sucesso - Guia Já Emitida (Reimpressa)` ou `Guia Existente - …` / `Divergência na Guia Existente (Conferir no Portal)` |
 | **Conteúdo da guia** | A GFD baixada contém raiz do CNPJ, competência e valor do card, e não é cópia de um relatório já salvo. | `Falha na Validação do PDF (Guia)` |
 
 PDFs reprovados nunca ficam com o nome final: são movidos para a subpasta `_rejeitados/` da empresa. No caso de `Falha na Validação do PDF (Guia)`, a guia **foi solicitada no portal** — confira manualmente no FGTS Digital.
 
 > ✅ **Confirmação de perfil validada no portal real (27/10/2026):** o portal exibe `Empregador: 11.444.777/0001-61 | RAZÃO SOCIAL` em `span.dados-perfil`; a trava confirmou corretamente a troca para 3 empresas.
 >
-> ⚠️ **Validação pendente no portal real:** o formato do texto dos PDFs reais (GFD e relatórios analíticos) ainda precisa ser confirmado numa emissão real. Até lá, se os PDFs vierem em outro formato, as travas reprovam o arquivo em vez de arriscar.
+> ✅ **Validação da GFD real (12/11/2026):** uma guia real reimpressa do portal foi aprovada pela validação (CNPJ, competência e valor) e reprovada quando o valor, a competência ou a empresa estavam errados.
+>
+> ⚠️ **Validação pendente no portal real:** o formato do texto dos relatórios analíticos reais ainda precisa ser confirmado. Se vierem em outro formato, as travas reprovam o arquivo em vez de arriscar.
 
 ### 2. Modo "Apenas Conferir" (Auditoria de Folha)
 Ativado marcando a opção **"Apenas conferir se o valor do relatório e do sistema está igual"**:

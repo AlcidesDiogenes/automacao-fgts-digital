@@ -6,7 +6,7 @@
 
 Aplicação desktop Windows que lê os encargos de FGTS calculados na folha (relatório "Pagamento de Encargos" do **Sistema Domínio** ou planilha), entra no **FGTS Digital** pelo Gov.br com o certificado do contador instalado no Windows, troca o perfil por **procuração eletrônica** para cada empresa cliente, confere o valor apurado no portal contra a folha e emite a **GFD** (guia) e os relatórios analíticos — ou apenas confere, sem emitir.
 
-Regra central desde a auditoria de 27/10/2026: **na dúvida, não emite** ([ADR-0003](decisoes/ADR-0003-travas-da-emissao.md)).
+Regra central desde a auditoria de 27/10/2026: **na dúvida, não emite** ([ADR-0003](decisoes/ADR-0003-travas-da-emissao.md)). Desde 12/11/2026, guia já emitida nunca é reemitida ([ADR-0008](decisoes/ADR-0008-guia-existente-nao-e-reemitida.md)).
 
 ## Componentes
 
@@ -78,8 +78,13 @@ flowchart TD
     I -- sim --> J[Baixa relatórios analíticos<br/>e valida conteúdo]
     J --> K{Relatório confere<br/>com a empresa?}
     K -- não --> X7[Falha na Validação do PDF<br/>Relatório - não emite]
-    K -- sim --> L[Emite a GFD do card Mensal<br/>e valida o PDF]
-    L --> M{Guia confere?}
+    K -- sim --> R{Card já tem guia<br/>aguardando pagamento?}
+    R -- "uma, valor conferido" --> RI[Reimprime e valida o PDF<br/>Sucesso - Guia Já Emitida ou<br/>Divergência na Guia Existente]
+    R -- "mais de uma / sem valor" --> RX[Guia Existente - conferir no portal<br/>não reimprime nem emite]
+    R -- não --> L[Emite a GFD do card Mensal<br/>e valida o PDF]
+    L --> MN{Portal pede<br/>Confirma nova emissão?}
+    MN -- sim --> XN[Cancela - Reemissão Bloqueada]
+    MN -- não --> M{Guia confere?}
     M -- não --> X8[Falha na Validação do PDF Guia<br/>arquivo em _rejeitados]
     M -- sim --> OK[Sucesso - Guia Emitida]
 ```

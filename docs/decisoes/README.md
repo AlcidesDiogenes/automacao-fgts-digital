@@ -13,6 +13,7 @@ Cada decisão técnica relevante tem um arquivo `ADR-NNNN-titulo.md` com context
 | [ADR-0005](ADR-0005-dados-de-navegador-fora-do-repositorio.md) | Dados de navegador e bancos locais fora do repositório | Aceita | 27/10/2026 |
 | [ADR-0006](ADR-0006-fluxo-de-testes.md) | Fluxo de testes: automáticos sem portal real e só com dados fictícios | Aceita | 28/10/2026 |
 | [ADR-0007](ADR-0007-competencia-sempre-digitada.md) | Competência sempre digitada pelo usuário | Aceita | 28/10/2026 |
+| [ADR-0008](ADR-0008-guia-existente-nao-e-reemitida.md) | Guia já emitida não é reemitida; reimprime só se o valor for o do relatório | Aceita | 12/11/2026 |
 
 ## Modelo
 

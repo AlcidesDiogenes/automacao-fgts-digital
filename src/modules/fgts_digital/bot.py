@@ -5,6 +5,7 @@ emissão de guias GFD (com PIX) e download de relatórios de débitos.
 """
 
 import os
+import re
 import shutil
 import hashlib
 import tempfile
@@ -38,6 +39,8 @@ class FGTSDigitalBot:
         self.output_base_dir = Path(output_base_dir)
         # Motivo da última reprovação de PDF (exibido nos detalhes do resultado)
         self.ultima_rejeicao: str = ""
+        # True quando o portal pediu "Confirma nova emissão?" e o robô cancelou (ADR-0008)
+        self.reemissao_bloqueada: bool = False
 
     def _validar_ou_rejeitar(self, caminho: Path, validacao: Optional[Dict[str, Any]]) -> bool:
         """
@@ -762,28 +765,78 @@ class FGTSDigitalBot:
             logger.warning(f"Erro ou tempo limite ao baixar relatório PDF ({secao_nome}): {e}")
             return False
 
-    def _confirmar_modal_se_houver(self) -> bool:
-        """Detecta modais de confirmação abertos (como 'Confirma nova emissão?') e clica no botão afirmativo."""
+    def _guias_relacionadas(self, container_mensal: Optional[Any]) -> List[Any]:
+        """
+        Links 'Reimprimir guia' do bloco 'Guias relacionadas aguardando pagamento' do card Mensal.
+        Lista vazia quando a competência ainda não tem guia emitida (ADR-0008).
+        """
+        if container_mensal is None:
+            return []
+        links = []
+        for s in sel.LINK_REIMPRIMIR_GUIA:
+            try:
+                for el in container_mensal.locator(s).all():
+                    if el.is_visible():
+                        links.append(el)
+            except Exception:
+                continue
+            if links:
+                break
+        return links
+
+    def _reimprimir_guia(self, link: Any, caminho_guia: Path, validacao: Dict[str, Any]) -> bool:
+        """
+        Baixa a guia já emitida pelo link 'Reimprimir guia' (não gera guia nova) e valida CNPJ,
+        competência e valor. Reprovada, vai para '_rejeitados' e nunca fica com o nome final.
+        """
+        caminho_guia.parent.mkdir(parents=True, exist_ok=True)
+        # Relatórios já salvos não podem ser aceitos como guia; a própria guia antiga pode ser sobrescrita.
+        hashes_existentes = {
+            self._hash_arquivo(p) for p in caminho_guia.parent.glob("*.pdf") if p.resolve() != caminho_guia.resolve()
+        }
         try:
-            botoes_confirmar = [
-                "button:has-text('Confirmar')",
-                "button.primary:has-text('Confirmar')",
-                "button:has-text('Sim')",
-                "button.primary:has-text('Sim')",
-                "button:has-text('Emitir')",
-                "button:has-text('Continuar')",
-                "button:has-text('Ok')"
-            ]
-            for b_sel in botoes_confirmar:
-                btn = self.page.locator(b_sel).first
-                if btn.is_visible():
-                    logger.info(f"Confirmando modal com botão: '{b_sel}'")
+            with self.page.expect_download(timeout=30000) as info:
+                link.click()
+            info.value.save_as(str(caminho_guia))
+        except Exception as e:
+            logger.warning(f"Reimpressão da guia não gerou download: {e}")
+            return False
+        return self._aceitar_guia_salva(caminho_guia, hashes_existentes, validacao)
+
+    def _modal_nova_emissao(self, timeout_ms: int) -> Optional[Any]:
+        """
+        Retorna o modal 'Gerar guia - Confirma nova emissão?' se ele abrir até timeout_ms.
+        Nos logs reais (11 e 12/11/2026) o portal só mostra confirmação ao reemitir, então
+        qualquer modal com 'Confirmar' depois de 'Emitir guia' é tratado como reemissão.
+        Botões 'Confirmar' fora de modal são ignorados.
+        """
+        limite = time.time() + timeout_ms / 1000
+        while True:
+            for s in sel.MODAL_CONFIRMACAO_EMISSAO:
+                try:
+                    for el in self.page.locator(s).all():
+                        if el.is_visible():
+                            texto = el.inner_text()
+                            if re.search(r"nova\s+emiss", texto, re.IGNORECASE) or "Confirmar" in texto:
+                                return el
+                except Exception:
+                    continue
+            if time.time() >= limite:
+                return None
+            time.sleep(0.25)
+
+    def _cancelar_modal(self, modal: Any) -> None:
+        """Fecha o modal de reemissão pelo botão Cancelar (nunca confirma)."""
+        for s in ["button:has-text('Cancelar')", "button:has-text('Não')", "button:has-text('Fechar')", "button[aria-label*='Fechar' i]"]:
+            try:
+                btn = modal.locator(s).first
+                if btn.count() > 0 and btn.is_visible():
                     btn.click()
-                    time.sleep(1.0)
-                    return True
-        except Exception:
-            pass
-        return False
+                    time.sleep(0.5)
+                    return
+            except Exception:
+                continue
+        logger.warning("Botão Cancelar do modal de reemissão não encontrado; o modal será descartado ao sair da tela.")
 
     @staticmethod
     def _hash_arquivo(caminho: Path) -> str:
@@ -838,7 +891,7 @@ class FGTSDigitalBot:
     ) -> bool:
         """
         Clica no botão 'Emitir guia' DENTRO do card Mensal selecionado e intercepta o download da GFD.
-        Trata o modal de confirmação 'Gerar guia - Confirma nova emissão?' e botões pós-emissão.
+        Se o portal pedir 'Confirma nova emissão?', CANCELA e marca `reemissao_bloqueada` (ADR-0008).
         Sem card Mensal identificado, não emite. Todo PDF salvo passa pela validação de conteúdo.
         """
         logger.info("Solicitando emissão da guia GFD Mensal...")
@@ -864,37 +917,35 @@ class FGTSDigitalBot:
             pass
 
         try:
-            # 1. Se o modal de confirmação 'Gerar guia' já estiver aberto na tela
-            btn_confirmar = self.page.locator("button:has-text('Confirmar'), button.primary:has-text('Confirmar')").first
-            if btn_confirmar.is_visible():
-                logger.info("Modal 'Gerar guia' já está aberto! Clicando em 'Confirmar'...")
-                btn_confirmar.click()
-            else:
-                # 2. Localiza o botão 'Emitir guia' somente dentro do card Mensal selecionado
-                #    (botões fora do card podem pertencer a guias Rescisórias ou residuais)
-                btn_emitir = None
-                try:
-                    for s_btn in ["button:has-text('Emitir guia')", "button:has-text('Emitir Guia')", "button:has-text('Emitir')"]:
-                        loc = container_mensal.locator(s_btn)
-                        if loc.count() > 0 and loc.first.is_visible():
-                            btn_emitir = loc.first
-                            logger.info("Botão 'Emitir guia' localizado diretamente no card Mensal.")
-                            break
-                except Exception:
-                    pass
+            # 1. Localiza o botão 'Emitir guia' somente dentro do card Mensal selecionado
+            #    (botões fora do card podem pertencer a guias Rescisórias ou residuais).
+            #    Nenhum 'Confirmar' é clicado: confirmação só aparece em reemissão (ADR-0008).
+            btn_emitir = None
+            try:
+                for s_btn in ["button:has-text('Emitir guia')", "button:has-text('Emitir Guia')", "button:has-text('Emitir')"]:
+                    loc = container_mensal.locator(s_btn)
+                    if loc.count() > 0 and loc.first.is_visible():
+                        btn_emitir = loc.first
+                        logger.info("Botão 'Emitir guia' localizado diretamente no card Mensal.")
+                        break
+            except Exception:
+                pass
 
-                if not btn_emitir:
-                    logger.warning("Botão 'Emitir guia' não localizado dentro do card Mensal.")
-                    return False
+            if not btn_emitir:
+                logger.warning("Botão 'Emitir guia' não localizado dentro do card Mensal.")
+                return False
 
-                logger.info("Clicando no botão 'Emitir guia' da Guia Mensal...")
-                btn_emitir.click()
-                time.sleep(1.0)
+            logger.info("Clicando no botão 'Emitir guia' da Guia Mensal...")
+            btn_emitir.click()
+            time.sleep(1.0)
 
-                # Verifica se abriu o modal de confirmação 'Confirma nova emissão?'
-                if self._aguardar_visivel(btn_confirmar, 3000):
-                    logger.info("Modal 'Gerar guia - Confirma nova emissão?' exibido! Clicando em 'Confirmar'...")
-                    btn_confirmar.click()
+            # 2. Modal 'Confirma nova emissão?' = já existe guia: cancela e não emite
+            modal = self._modal_nova_emissao(timeout_ms=3000)
+            if modal is not None:
+                logger.warning("Portal pediu 'Confirma nova emissão?': a competência já tem guia. Reemissão CANCELADA.")
+                self._cancelar_modal(modal)
+                self.reemissao_bloqueada = True
+                return False
 
             # 3. Aguarda até 15 segundos para o download ser despachado
             for _ in range(30):
@@ -976,6 +1027,7 @@ class FGTSDigitalBot:
         cnpj_limpo = limpar_cnpj(cnpj)
         cnpj_fmt = formatar_cnpj(cnpj_limpo)
         self.ultima_rejeicao = ""
+        self.reemissao_bloqueada = False
         validacao_rel = {"cnpj": cnpj_limpo, "competencia": competencia}
         comp_pasta = competencia.replace("/", "-")
         razao_sanitizada = sanitizar_nome_arquivo(razao_social)[:40]
@@ -1206,11 +1258,56 @@ class FGTSDigitalBot:
                 time.sleep(1.0)
                 return resultado
 
-            # 7. Emissão da Guia (GFD)
             caminho_guia = pasta_empresa / nome_guia
             validacao_guia = {**validacao_rel, "valor": valor_tela}
+
+            # 7a. Competência já tem guia aguardando pagamento: nunca reemite (ADR-0008).
+            #     Reimprime a existente só se o valor da tela for o do relatório (mesma tolerância da ADR-0003).
+            relacionadas = self._guias_relacionadas(container_mensal)
+            if relacionadas:
+                numeros = [(r.inner_text() or "").strip() for r in relacionadas]
+                if len(relacionadas) > 1:
+                    resultado["status"] = "Guia Existente - Mais de Uma Relacionada (Conferir no Portal)"
+                    resultado["detalhes"] = (
+                        f"A competência já tem {len(relacionadas)} guias aguardando pagamento ({', '.join(numeros)}). "
+                        f"Nenhuma foi reimpressa ou emitida."
+                    )
+                elif fgts_esperado <= 0 or abs(valor_tela - fgts_esperado) > 0.02:
+                    resultado["status"] = "Guia Existente sem Valor Conferido (Não Reimpressa)"
+                    resultado["detalhes"] = (
+                        f"Guia {numeros[0]} já emitida, mas o valor da tela (R$ {valor_tela:.2f}) não foi conferido "
+                        f"com o relatório (R$ {fgts_esperado:.2f}). Nada foi reimpresso ou emitido."
+                    )
+                elif self._reimprimir_guia(relacionadas[0], caminho_guia, validacao_guia):
+                    resultado["status"] = "Sucesso - Guia Já Emitida (Reimpressa)"
+                    resultado["arquivo_guia"] = caminho_guia.name
+                    resultado["detalhes"] = (
+                        f"Guia {numeros[0]} já estava emitida; reimpressa e validada (Valor: R$ {valor_tela:.2f}). "
+                        f"Nenhuma guia nova foi gerada."
+                    )
+                elif self.ultima_rejeicao:
+                    resultado["status"] = "Divergência na Guia Existente (Conferir no Portal)"
+                    resultado["detalhes"] = (
+                        f"Guia {numeros[0]} já emitida não confere com o relatório ({self.ultima_rejeicao}). "
+                        f"Arquivo em '_rejeitados'. Nenhuma guia nova foi gerada."
+                    )
+                else:
+                    resultado["status"] = "Guia Existente - Falha na Reimpressão"
+                    resultado["detalhes"] = f"Guia {numeros[0]} já emitida; a reimpressão não gerou download. Nenhuma guia nova foi gerada."
+                logger.info(f"{cnpj_fmt}: {resultado['status']} - {resultado['detalhes']}")
+                self.page.goto("https://fgtsdigital.sistema.gov.br/portal/servicos", wait_until="domcontentloaded")
+                time.sleep(1.0)
+                return resultado
+
+            # 7b. Emissão da Guia (GFD)
             sucesso_guia = self._emitir_guia_gfd(caminho_guia, container_mensal=container_mensal, validacao=validacao_guia)
-            if sucesso_guia:
+            if self.reemissao_bloqueada:
+                resultado["status"] = "Guia Existente - Reemissão Bloqueada (Conferir no Portal)"
+                resultado["detalhes"] = (
+                    "O portal pediu 'Confirma nova emissão?' (a competência já tem guia). "
+                    "O robô cancelou: nenhuma guia nova foi gerada."
+                )
+            elif sucesso_guia:
                 resultado["status"] = "Sucesso - Guia Emitida"
                 resultado["arquivo_guia"] = caminho_guia.name
                 resultado["detalhes"] = f"Guia GFD gerada, salva e validada (Valor: R$ {valor_tela:.2f})."

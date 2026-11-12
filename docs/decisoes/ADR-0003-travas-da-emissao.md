@@ -22,6 +22,7 @@ Toda incerteza bloqueia a emissão e vira um status explícito:
 | :--- | :--- | :--- |
 | Perfil | Após a troca, o modal fecha e `span.dados-perfil` exibe a raiz do CNPJ escolhido (confirmado no portal real em 27/10/2026). | `Perfil não confirmado` |
 | Valor de referência | Sem valor esperado, não emite (interruptor "Exigir valor esperado", ligado por padrão). | `Sem Valor de Referência (Não Emitida)` |
+| Guia já emitida *(acrescentada em 12/11/2026, [ADR-0008](ADR-0008-guia-existente-nao-e-reemitida.md))* | Card com "Guias relacionadas aguardando pagamento" não é reemitido; a guia existente é reimpressa só com valor conferido, e o modal "Confirma nova emissão?" é cancelado. | `Guia Existente - …` / `Divergência na Guia Existente (Conferir no Portal)` |
 | Card Mensal | O botão "Emitir guia" só é clicado dentro do card Mensal escolhido. | `Card Mensal Não Identificado (Não Emitida)` |
 | Divergência | Diferença máxima de R$ 0,02 entre portal e folha (trava que já existia antes da auditoria). | `Divergência de Valores (Não Emitida)` |
 | Relatórios | Cada relatório baixado deve conter a raiz do CNPJ e a competência; se reprovar, indica perfil/empresa errados e a guia não é emitida. | `Falha na Validação do PDF (Relatório) - Guia Não Emitida` |
