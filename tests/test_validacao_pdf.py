@@ -68,3 +68,48 @@ def test_rejeita_pdf_sem_texto(tmp_path):
     ok, motivo = validar_pdf_documento(arq, CNPJ, "09/2026")
     assert not ok
     assert "texto" in motivo.lower()
+
+
+# Tipo de relatório (12/11/2026): nos PDFs reais, "Qtd. Trabalhadores Consignado" aparece em 9 de 9
+# relatórios de consignado e em 0 de 13 detalhes FGTS (varredura de 11/11/2026).
+BASE = ["Detalhe da Guia a Ser Emitida", "Empregador 12.345.678/0001-90", "Competencia 09/2026"]
+
+
+def test_relatorio_consignado_exige_marcador_de_consignado(pdf_factory):
+    pdf = pdf_factory("consig.pdf", BASE + ["Qtd. Trabalhadores Consignado: 2"])
+    ok, motivo = validar_pdf_documento(pdf, CNPJ, "09/2026", tipo_relatorio="consignado")
+    assert ok, motivo
+
+
+def test_detalhe_fgts_nao_passa_como_relatorio_consignado(pdf_factory):
+    pdf = pdf_factory("fgts.pdf", BASE + ["Total da Guia (FGTS + Consignado): 1.000,00"])
+    ok, motivo = validar_pdf_documento(pdf, CNPJ, "09/2026", tipo_relatorio="consignado")
+    assert not ok
+    assert "consignado" in motivo.lower()
+
+
+def test_relatorio_de_consignado_nao_passa_como_relatorio_fgts(pdf_factory):
+    pdf = pdf_factory("trocado.pdf", BASE + ["Qtd. Trabalhadores Consignado: 2"])
+    ok, motivo = validar_pdf_documento(pdf, CNPJ, "09/2026", tipo_relatorio="fgts")
+    assert not ok
+
+
+def test_detalhe_fgts_passa_como_relatorio_fgts(pdf_factory):
+    pdf = pdf_factory("fgts_ok.pdf", BASE + ["Total da Guia (FGTS + Consignado): 1.000,00"])
+    ok, motivo = validar_pdf_documento(pdf, CNPJ, "09/2026", tipo_relatorio="fgts")
+    assert ok, motivo
+
+
+# Relatório de Consignado real (12/11/2026): o extrator de texto cola as colunas da tabela e a
+# competência vem grudada no CPF do trabalhador ("...-0910/2026"). Dados fictícios.
+def test_competencia_colada_no_cpf_do_relatorio_consignado(pdf_factory):
+    pdf = pdf_factory("colada.pdf", BASE + ["Qtd. Trabalhadores Consignado: 1",
+                                            "139,2819/11/2026 657 123.456.789-0910/2026 2810676656 341"])
+    ok, motivo = validar_pdf_documento(pdf, CNPJ, "10/2026", tipo_relatorio="consignado")
+    assert ok, motivo
+
+
+def test_competencia_colada_em_numero_qualquer_continua_rejeitada(pdf_factory):
+    pdf = pdf_factory("numero.pdf", ["Empregador 12.345.678/0001-90", "Protocolo 98765410/2026"])
+    ok, _ = validar_pdf_documento(pdf, CNPJ, "10/2026")
+    assert not ok

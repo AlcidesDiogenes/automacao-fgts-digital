@@ -91,6 +91,8 @@ A varredura lê essas respostas **ouvindo a rede do navegador** enquanto navega 
 4. **Competência parcelada aparece como Regular** na Consulta de Competências, mesmo sem estar quitada (aviso da própria tela).
 5. A lista de competências da Guia Rápida traz **todas** as competências com débito em aberto, não só a do mês.
 6. Empregador pessoa física (CPF) é aceito na troca de perfil, mas o robô transforma o CPF em CNPJ (problema conhecido #12).
+7. **Estrutura do card** (12/11/2026): cada agrupamento é um `div.border-solid-sm` dentro de `app-agrupamento-guia-rapida-consignado`. As linhas são: título `<b>Mensal</b> - Vencimento da Guia` + "Emitir guia"; "Guias relacionadas"; `span.titleConsignado <b>FGTS</b>` + botões PDF/CSV (detalhe da guia); `span.titleConsignado <b>Consignado</b>` + botão PDF (só quando há consignado). O texto da página inteira também contém "Mensal - Vencimento", por isso o card tem de ser o quadro, não um bloco qualquer.
+8. **Relatórios em PDF**: o detalhe FGTS traz "Total da Guia (FGTS + Consignado)"; só o de Consignado traz "Qtd. Trabalhadores Consignado". No de Consignado, o extrator de texto cola a competência no CPF do trabalhador.
 
 ## Como a varredura foi feita
 
@@ -128,7 +130,7 @@ As duas competências 09/2026 em aberto não aparecem no relatório do Domínio 
 | :--- | :--- | :--- | :--- | :--- |
 | 1 | **Não reemitir guia existente.** Antes de emitir, ler `guiaExistente` / "Guias relacionadas" no card; se houver, baixar a guia existente (Reimprimir) ou marcar "Guia já emitida", e **nunca** confirmar "Confirma nova emissão?" sozinho. | Segurança: um segundo lote emitia outra guia para a mesma competência | Baixo | **Feito em 12/11/2026** ([ADR-0008](decisoes/ADR-0008-guia-existente-nao-e-reemitida.md)) |
 | 2 | **Modo "Raio-X da carteira"** no app, a partir do script da varredura: competências irregulares, meses anteriores em aberto (com juros/multa), consignado vencido, notificação, indenização compensatória, crédito na CVE, estornos e guias não pagas, com a coluna "O que fazer" | Acha atraso que a folha do mês não mostra (2 de 11 empresas) | Médio | Esta varredura |
-| 3 | **Ler valores do JSON** que o portal já carrega (`guia-rapida/v2`) em vez do texto da tela: valores exatos convertidos para `Decimal`, tipo do card, vencimento e guia existente, sem depender de seletor de layout | Menos quebra quando o portal muda; ajuda no #1 e no #8 dos problemas conhecidos | Médio | APIs internas acima |
+| 3 | **Ler valores do JSON** que o portal já carrega (`guia-rapida/v2`) em vez do texto da tela: valores exatos convertidos para `Decimal`, tipo do card, vencimento e guia existente, sem depender de seletor de layout | Menos quebra quando o portal muda; menos dependência da estrutura da tela (o card errado causou o relatório Consignado trocado, corrigido em 12/11/2026) | Médio | APIs internas acima |
 | 4 | **Conferir pagamento das guias** depois do vencimento (`consultar-guias`: Aguardando Pagamento × Paga) e listar quem não pagou | Cobrança do cliente antes de gerar encargos | Baixo | Consulta de Guias |
 | 5 | **Corrigir empregador CPF** na troca de perfil | Hoje 1 dos 16 empregadores não seria processado | Baixo | Problema conhecido #12 |
 | 6 | **Retomar o lote quando a sessão expira** (detectar `/portal/login`, pedir novo login e continuar de onde parou) | Lotes com mais de cerca de 10 empresas | Médio | Problema conhecido #14 |

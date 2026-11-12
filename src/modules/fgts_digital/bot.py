@@ -31,6 +31,49 @@ from src.utils.logger import logger
 from config import settings
 
 
+# Sobe do título do card até o quadro (sel.QUADRO_CARD_GUIA) e só o aceita com exatamente um título
+# de card e um botão "Emitir". Marca o quadro com data-robo-card e devolve a marca ('' se recusado).
+_JS_MARCAR_QUADRO = r"""(titulo, seletorQuadro) => {
+  const reTitulo = /(Mensal|Rescis[óo]ria|Processo\s+Trabalhista|Consignado)\s*-\s*Vencimento/gi;
+  let n = titulo.parentElement;
+  while (n && n !== document.body) {
+    if (n.matches(seletorQuadro)) {
+      const emitir = [...n.querySelectorAll('button')].filter(b => /emitir/i.test(b.innerText || ''));
+      const titulos = ((n.innerText || '').match(reTitulo) || []).length;
+      if (emitir.length !== 1 || titulos !== 1) return '';
+      if (!n.dataset.roboCard) n.dataset.roboCard = 'c' + Math.random().toString(36).slice(2);
+      return n.dataset.roboCard;
+    }
+    n = n.parentElement;
+  }
+  return '';
+}"""
+
+# Acha, dentro do card, o título com texto exatamente igual à seção ("FGTS" / "Consignado") e o único
+# botão de relatório PDF da mesma linha. Marca o botão com data-robo-pdf e devolve a marca ('' se ambíguo).
+_JS_MARCAR_BOTAO_RELATORIO = r"""(card, secao) => {
+  const alvo = secao.trim().toLowerCase();
+  const ehPdf = b => /relat[óo]rio em pdf/i.test(b.getAttribute('aria-label') || '')
+                     || !!b.querySelector('[class*="fa-file-pdf"]');
+  const titulos = [...card.querySelectorAll('b, strong, span, legend, h1, h2, h3, h4, h5, h6')]
+                    .filter(e => (e.innerText || '').trim().toLowerCase() === alvo);
+  for (const t of titulos) {
+    let n = t.parentElement;
+    while (n && n !== card.parentElement) {
+      const pdfs = [...n.querySelectorAll('button, a')].filter(ehPdf);
+      if (pdfs.length === 1) {
+        const b = pdfs[0];
+        if (!b.dataset.roboPdf) b.dataset.roboPdf = 'p' + Math.random().toString(36).slice(2);
+        return b.dataset.roboPdf;
+      }
+      if (pdfs.length > 1) break;
+      n = n.parentElement;
+    }
+  }
+  return '';
+}"""
+
+
 class FGTSDigitalBot:
     """Robô que navega pelo portal FGTS Digital executando a rotina de emissão em lote."""
 
@@ -54,6 +97,7 @@ class FGTSDigitalBot:
             validacao["cnpj"],
             validacao["competencia"],
             valor_esperado=validacao.get("valor"),
+            tipo_relatorio=validacao.get("tipo_relatorio"),
         )
         if ok:
             return True
@@ -428,94 +472,64 @@ class FGTSDigitalBot:
 
     def _obter_container_mensal(self, fgts_esperado: float = 0.0) -> Optional[Any]:
         """
-        Localiza o card/container específico da guia Mensal na tela de Guia Rápida.
-        Se houver múltiplos cards mensais (ex: guia residual e guia principal com consignado),
-        avalia cada card e seleciona aquele cujo valor mais se aproxima de `fgts_esperado`
-        (ou o de maior valor caso fgts_esperado seja 0).
-        Evita interferência de guias Rescisórias não pagas que aparecem no mesmo portal.
+        Localiza o QUADRO do card Mensal na tela de Guia Rápida.
+
+        No portal real (conferido em 12/11/2026) cada agrupamento é um `div.border-solid-sm` com o
+        título "<b>Mensal</b> - Vencimento da Guia", o botão "Emitir guia", as guias relacionadas e as
+        linhas de relatório FGTS/Consignado. O quadro é o ancestral mais próximo do título que casa com
+        `sel.QUADRO_CARD_GUIA`, e só é aceito se tiver exatamente UM título de card e UM botão "Emitir".
+        Antes, blocos maiores eram aceitos e o "card" chegava a ser a página inteira: o relatório
+        Consignado saía do botão do FGTS e Emitir/Reimprimir podiam ser de outro card.
+
+        Com mais de um card Mensal, escolhe o de valor mais próximo de `fgts_esperado`
+        (ou o de maior valor quando `fgts_esperado` é 0).
         """
-        import re
         try:
-            loc_headers = self.page.locator("h1, h2, h3, h4, h5, div, span, strong").filter(
-                has_text=re.compile(r"Mensal\s*-\s*Vencimento", re.IGNORECASE)
-            ).all()
-
-            candidatos = []
-            seen_signatures = set()
-
-            for header in loc_headers:
-                if not header.is_visible():
-                    continue
-
-                for ancestor_xpath in [
-                    "xpath=ancestor::*[contains(@class, 'card') or contains(@class, 'br-card') or contains(@class, 'cardListItem') or self::fieldset][1]",
-                    "xpath=ancestor::div[contains(@class, 'border') or contains(@style, 'border') or contains(@class, 'box')][1]",
-                    "xpath=ancestor::div[button[contains(., 'Emitir')] and (.//*[contains(., 'FGTS')] or .//*[contains(., 'Total')])][1]",
-                    "xpath=ancestor::div[2]",
-                    "xpath=ancestor::div[3]",
-                    "xpath=ancestor::div[4]"
-                ]:
-                    try:
-                        cand = header.locator(ancestor_xpath).first
-                        if cand.count() > 0 and cand.is_visible():
-                            txt = cand.inner_text()
-                            txt_lower = txt.lower()
-                            if "mensal" in txt_lower and "rescisória" not in txt_lower and "rescisoria" not in txt_lower:
-                                sig = txt[:150]
-                                if sig not in seen_signatures:
-                                    seen_signatures.add(sig)
-                                    val = extrair_valor_fgts_de_texto(txt, fgts_esperado=fgts_esperado)
-                                    candidatos.append((cand, val, txt))
-                                break
-                    except Exception:
-                        continue
-
-            # Fallback caso ancestrais não tenham retornado candidatos
-            if not candidatos:
-                cards = self.page.locator("div.card, .br-card, fieldset, div").filter(
-                    has_text=re.compile(r"Mensal\s*-\s*Vencimento", re.IGNORECASE)
-                ).all()
-                for c in cards:
-                    if c.is_visible():
-                        txt = c.inner_text()
-                        txt_lower = txt.lower()
-                        if "mensal" in txt_lower and "rescisória" not in txt_lower and "rescisoria" not in txt_lower:
-                            sig = txt[:150]
-                            if sig not in seen_signatures:
-                                seen_signatures.add(sig)
-                                val = extrair_valor_fgts_de_texto(txt, fgts_esperado=fgts_esperado)
-                                candidatos.append((c, val, txt))
-
-            if not candidatos:
-                return None
-
-            if len(candidatos) == 1:
-                cand, val, _ = candidatos[0]
-                logger.info(f"Container único da Guia Mensal identificado (Valor apurado: R$ {val:.2f}).")
-                return cand
-
-            # Mais de um container mensal identificado
-            logger.info(f"Foram identificados {len(candidatos)} cards mensais na tela. Selecionando o mais adequado...")
-            for idx, (_, val, _) in enumerate(candidatos, 1):
-                logger.info(f"  -> Card {idx}: Valor apurado R$ {val:.2f}")
-
-            if fgts_esperado > 0:
-                candidatos.sort(key=lambda item: abs(item[1] - fgts_esperado))
-                melhor_cand, melhor_val, _ = candidatos[0]
-                logger.info(
-                    f"Card selecionado por proximidade com valor esperado: R$ {melhor_val:.2f} (Esperado: R$ {fgts_esperado:.2f} | Dif: R$ {abs(melhor_val - fgts_esperado):.2f})."
-                )
-                return melhor_cand
-            else:
-                candidatos.sort(key=lambda item: item[1], reverse=True)
-                melhor_cand, melhor_val, _ = candidatos[0]
-                logger.info(f"Card selecionado pelo maior valor apurado: R$ {melhor_val:.2f}.")
-                return melhor_cand
-
+            titulos = self.page.get_by_text(re.compile(r"Mensal\s*-\s*Vencimento", re.IGNORECASE)).all()
         except Exception as e:
-            logger.debug(f"Aviso ao localizar container mensal: {e}")
+            logger.debug(f"Aviso ao procurar o título do card Mensal: {e}")
+            return None
 
-        return None
+        candidatos = []
+        marcas_vistas = set()
+        for titulo in titulos:
+            try:
+                if not titulo.is_visible():
+                    continue
+                marca = titulo.evaluate(_JS_MARCAR_QUADRO, ", ".join(sel.QUADRO_CARD_GUIA))
+                if not marca or marca in marcas_vistas:
+                    continue
+                marcas_vistas.add(marca)
+                quadro = self.page.locator(f"[data-robo-card='{marca}']").first
+                txt = quadro.inner_text()
+                val = extrair_valor_fgts_de_texto(txt, fgts_esperado=fgts_esperado)
+                candidatos.append((quadro, val, txt))
+            except Exception as e:
+                logger.debug(f"Aviso ao avaliar um card Mensal: {e}")
+
+        if not candidatos:
+            return None
+
+        if len(candidatos) == 1:
+            cand, val, _ = candidatos[0]
+            logger.info(f"Card da Guia Mensal identificado (Valor apurado: R$ {val:.2f}).")
+            return cand
+
+        logger.info(f"Foram identificados {len(candidatos)} cards mensais na tela. Selecionando o mais adequado...")
+        for idx, (_, val, _) in enumerate(candidatos, 1):
+            logger.info(f"  -> Card {idx}: Valor apurado R$ {val:.2f}")
+
+        if fgts_esperado > 0:
+            candidatos.sort(key=lambda item: abs(item[1] - fgts_esperado))
+            melhor_cand, melhor_val, _ = candidatos[0]
+            logger.info(
+                f"Card selecionado por proximidade com valor esperado: R$ {melhor_val:.2f} (Esperado: R$ {fgts_esperado:.2f} | Dif: R$ {abs(melhor_val - fgts_esperado):.2f})."
+            )
+            return melhor_cand
+        candidatos.sort(key=lambda item: item[1], reverse=True)
+        melhor_cand, melhor_val, _ = candidatos[0]
+        logger.info(f"Card selecionado pelo maior valor apurado: R$ {melhor_val:.2f}.")
+        return melhor_cand
 
     def _extrair_valor_tela_fgts(self, container_mensal: Optional[Any] = None, fgts_esperado: float = 0.0) -> float:
         """
@@ -647,111 +661,36 @@ class FGTSDigitalBot:
         self,
         secao_nome: str,
         caminho_destino: Path,
-        indice_fallback: int = 0,
         container_mensal: Optional[Any] = None,
         validacao: Optional[Dict[str, Any]] = None
     ) -> bool:
         """
-        Localiza e faz o download do relatório analítico em PDF da seção especificada ('FGTS' ou 'Consignado').
-        Prioriza os botões dentro do container da Guia Mensal para não baixar relatórios de guias Rescisórias.
+        Baixa o relatório PDF da linha `secao_nome` ('FGTS' ou 'Consignado') do card Mensal.
+
+        No portal real (12/11/2026) cada linha tem o título <b>FGTS</b> ou <b>Consignado</b>
+        (span.titleConsignado) e, ao lado, o próprio botão "Imprimir relatório em PDF". Só é clicado
+        o botão da MESMA linha do título. Sem card ou sem a linha, não baixa: não há mais o recurso de
+        "n-ésimo botão PDF da página", que salvava o relatório FGTS com o nome de Consignado.
+        O conteúdo é conferido pelo tipo (o de Consignado tem "Trabalhadores Consignado").
         """
-        logger.info(f"Buscando botão de download do relatório PDF ({secao_nome})...")
+        logger.info(f"Buscando o botão do relatório PDF ({secao_nome}) no card Mensal...")
+        if container_mensal is None:
+            logger.warning(f"Card Mensal não identificado: relatório {secao_nome} não baixado.")
+            return False
         caminho_destino.parent.mkdir(parents=True, exist_ok=True)
 
-        seletores_pdf = [
-            "button:has(.fa-file-pdf)",
-            "button:has(i[class*='pdf'])",
-            "button:has([class*='pdf'])",
-            "button[title*='pdf' i]",
-            "button[aria-label*='pdf' i]",
-            "a[title*='pdf' i]",
-            "i.fa-file-pdf",
-            "[class*='fa-file-pdf']"
-        ]
-
-        btn_alvo = None
-
-        # 1. Se temos container mensal, procura os botões da seção DENTRO do container mensal
-        if container_mensal:
-            try:
-                cabecalhos = container_mensal.locator("h1, h2, h3, h4, h5, h6, strong, span.title, div.card-header, div, span").filter(has_text=secao_nome).all()
-                for cab in cabecalhos:
-                    parent = cab.locator("xpath=..")
-                    for s in seletores_pdf:
-                        botoes = parent.locator(s)
-                        if botoes.count() > 0 and botoes.first.is_visible():
-                            btn_alvo = botoes.first
-                            logger.info(f"Botão PDF para '{secao_nome}' localizado no cabeçalho dentro do container Mensal.")
-                            break
-                    if btn_alvo:
-                        break
-
-                if not btn_alvo:
-                    for s in seletores_pdf:
-                        botoes = container_mensal.locator(s).all()
-                        visiveis = [b for b in botoes if b.is_visible()]
-                        idx_rel = 0 if secao_nome.lower() == "fgts" else 1
-                        if len(visiveis) > idx_rel:
-                            btn_alvo = visiveis[idx_rel]
-                            logger.info(f"Botão PDF para '{secao_nome}' selecionado no container Mensal por índice {idx_rel}.")
-                            break
-            except Exception as e:
-                logger.debug(f"Tentativa de buscar botão PDF no container mensal falhou: {e}")
-
-        # 2. Se não encontrou no container mensal, busca após o texto 'Mensal - Vencimento'
-        if not btn_alvo:
-            try:
-                loc_header_mensal = self.page.locator("text=/Mensal\\s*-\\s*Vencimento/i").first
-                if loc_header_mensal.is_visible():
-                    cabs_apos = loc_header_mensal.locator(f"xpath=following::*[self::h1 or self::h2 or self::h3 or self::h4 or self::h5 or self::h6 or self::strong or self::div or self::span][contains(text(), '{secao_nome}')]").all()
-                    for cab in cabs_apos:
-                        parent = cab.locator("xpath=..")
-                        for s in seletores_pdf:
-                            botoes = parent.locator(s)
-                            if botoes.count() > 0 and botoes.first.is_visible():
-                                btn_alvo = botoes.first
-                                logger.info(f"Botão PDF para '{secao_nome}' localizado após cabeçalho Mensal.")
-                                break
-                        if btn_alvo:
-                            break
-            except Exception as e:
-                logger.debug(f"Busca de PDF após header mensal falhou: {e}")
-
-        # 3. Procura geral próximo ao cabeçalho da seção
-        if not btn_alvo:
-            try:
-                cabecalhos = self.page.locator("h1, h2, h3, h4, h5, h6, strong, span.title, div.card-header").filter(has_text=secao_nome).all()
-                for cab in cabecalhos:
-                    parent = cab.locator("xpath=..")
-                    for s in seletores_pdf:
-                        botoes = parent.locator(s)
-                        if botoes.count() > 0 and botoes.first.is_visible():
-                            btn_alvo = botoes.first
-                            logger.info(f"Botão PDF para '{secao_nome}' localizado no cabeçalho da seção.")
-                            break
-                    if btn_alvo:
-                        break
-            except Exception as e:
-                logger.debug(f"Tentativa geral de localizar botão {secao_nome} falhou: {e}")
-
-        # 4. Fallback: seleciona por índice global dos botões de PDF visíveis
-        if not btn_alvo:
-            logger.info(f"Tentando localizar botão PDF para '{secao_nome}' via índice de botões visíveis (índice: {indice_fallback})...")
-            for s in seletores_pdf:
-                try:
-                    todos = self.page.locator(s).all()
-                    visiveis = [el for el in todos if el.is_visible()]
-                    if len(visiveis) > indice_fallback:
-                        btn_alvo = visiveis[indice_fallback]
-                        logger.info(f"Botão PDF localizado pelo seletor '{s}' no índice {indice_fallback}.")
-                        break
-                except Exception:
-                    continue
-
-        if not btn_alvo:
-            logger.warning(f"Botão de relatório PDF para '{secao_nome}' não foi encontrado.")
+        try:
+            marca = container_mensal.evaluate(_JS_MARCAR_BOTAO_RELATORIO, secao_nome)
+        except Exception as e:
+            logger.warning(f"Falha ao procurar a linha '{secao_nome}' no card Mensal: {e}")
             return False
+        if not marca:
+            logger.warning(f"Linha '{secao_nome}' com botão de relatório PDF não encontrada no card Mensal.")
+            return False
+        btn_alvo = container_mensal.locator(f"[data-robo-pdf='{marca}']").first
 
+        if validacao:
+            validacao = {**validacao, "tipo_relatorio": secao_nome.lower()}
         try:
             with self.page.expect_download(timeout=15000) as download_info:
                 btn_alvo.click()
@@ -1199,7 +1138,7 @@ class FGTSDigitalBot:
                     # Baixa os relatórios analíticos em PDF para auditoria contábil
                     arquivos_audit = []
                     caminho_rel_fgts_div = pasta_empresa / f"Divergencia_{nome_rel_fgts}"
-                    if self._baixar_relatorio_pdf("FGTS", caminho_rel_fgts_div, indice_fallback=0, container_mensal=container_mensal, validacao=validacao_rel):
+                    if self._baixar_relatorio_pdf("FGTS", caminho_rel_fgts_div, container_mensal=container_mensal, validacao=validacao_rel):
                         arquivos_audit.append(caminho_rel_fgts_div.name)
 
                     try:
@@ -1211,7 +1150,7 @@ class FGTSDigitalBot:
 
                         if tem_consignado:
                             caminho_rel_cons_div = pasta_empresa / f"Divergencia_{nome_rel_cons}"
-                            if self._baixar_relatorio_pdf("Consignado", caminho_rel_cons_div, indice_fallback=1, container_mensal=container_mensal, validacao=validacao_rel):
+                            if self._baixar_relatorio_pdf("Consignado", caminho_rel_cons_div, container_mensal=container_mensal, validacao=validacao_rel):
                                 arquivos_audit.append(caminho_rel_cons_div.name)
                     except Exception:
                         pass
@@ -1226,7 +1165,7 @@ class FGTSDigitalBot:
             # 6. Download dos Relatórios Analíticos em PDF (FGTS e Consignado)
             arquivos_baixados = []
             caminho_rel_fgts = pasta_empresa / nome_rel_fgts
-            if self._baixar_relatorio_pdf("FGTS", caminho_rel_fgts, indice_fallback=0, container_mensal=container_mensal, validacao=validacao_rel):
+            if self._baixar_relatorio_pdf("FGTS", caminho_rel_fgts, container_mensal=container_mensal, validacao=validacao_rel):
                 arquivos_baixados.append(caminho_rel_fgts.name)
 
             try:
@@ -1238,7 +1177,7 @@ class FGTSDigitalBot:
 
                 if tem_consignado:
                     caminho_rel_cons = pasta_empresa / nome_rel_cons
-                    if self._baixar_relatorio_pdf("Consignado", caminho_rel_cons, indice_fallback=1, container_mensal=container_mensal, validacao=validacao_rel):
+                    if self._baixar_relatorio_pdf("Consignado", caminho_rel_cons, container_mensal=container_mensal, validacao=validacao_rel):
                         arquivos_baixados.append(caminho_rel_cons.name)
             except Exception as e:
                 logger.warning(f"{cnpj_fmt}: Falha ao verificar/baixar relatório consignado: {e}")

@@ -23,9 +23,9 @@ Toda incerteza bloqueia a emissão e vira um status explícito:
 | Perfil | Após a troca, o modal fecha e `span.dados-perfil` exibe a raiz do CNPJ escolhido (confirmado no portal real em 27/10/2026). | `Perfil não confirmado` |
 | Valor de referência | Sem valor esperado, não emite (interruptor "Exigir valor esperado", ligado por padrão). | `Sem Valor de Referência (Não Emitida)` |
 | Guia já emitida *(acrescentada em 12/11/2026, [ADR-0008](ADR-0008-guia-existente-nao-e-reemitida.md))* | Card com "Guias relacionadas aguardando pagamento" não é reemitido; a guia existente é reimpressa só com valor conferido, e o modal "Confirma nova emissão?" é cancelado. | `Guia Existente - …` / `Divergência na Guia Existente (Conferir no Portal)` |
-| Card Mensal | O botão "Emitir guia" só é clicado dentro do card Mensal escolhido. | `Card Mensal Não Identificado (Não Emitida)` |
+| Card Mensal | O botão "Emitir guia" só é clicado dentro do card Mensal escolhido. *Desde 12/11/2026 o card é o quadro `div.border-solid-sm` com exatamente um título e um "Emitir"; antes podia ser a página inteira.* | `Card Mensal Não Identificado (Não Emitida)` |
 | Divergência | Diferença máxima de R$ 0,02 entre portal e folha (trava que já existia antes da auditoria). | `Divergência de Valores (Não Emitida)` |
-| Relatórios | Cada relatório baixado deve conter a raiz do CNPJ e a competência; se reprovar, indica perfil/empresa errados e a guia não é emitida. | `Falha na Validação do PDF (Relatório) - Guia Não Emitida` |
+| Relatórios | Cada relatório baixado deve conter a raiz do CNPJ e a competência e ser do tipo certo (o de Consignado tem "Trabalhadores Consignado", o FGTS não; desde 12/11/2026). O botão é o da mesma linha do título FGTS/Consignado no card Mensal. Se reprovar, indica perfil/empresa/relatório errados e a guia não é emitida. | `Falha na Validação do PDF (Relatório) - Guia Não Emitida` |
 | Guia | A GFD deve conter raiz do CNPJ, competência e valor do card, e não pode ser cópia de um PDF já salvo para a empresa. | `Falha na Validação do PDF (Guia)` |
 
 PDFs reprovados vão para `_rejeitados/` e nunca ficam com o nome final.
@@ -41,5 +41,5 @@ PDFs reprovados vão para `_rejeitados/` e nunca ficam com o nome final.
 ## Consequências
 
 - Mais empresas podem terminar como "não emitida" — sempre com o motivo no relatório.
-- A validação de PDF ainda não foi testada com a GFD real ([problemas conhecidos](../problemas-conhecidos.md) #4): se o texto real tiver outro formato, todas as guias serão reprovadas até ajustar.
+- A validação de PDF foi conferida com a GFD, o detalhe FGTS e o relatório de Consignado reais em 12/11/2026 ([problemas conhecidos](../problemas-conhecidos.md), resolvidos). Se o portal mudar o formato do texto, os arquivos passam a ser reprovados (nada errado é emitido).
 - Testes de regressão: `tests/test_bot_seguranca.py`, `tests/test_validacao_pdf.py`.

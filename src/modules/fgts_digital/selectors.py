@@ -279,3 +279,12 @@ MODAL_CONFIRMACAO_EMISSAO = [
     "br-modal",
     ".br-modal",
 ]
+
+# Quadro de um card de agrupamento da Guia Rápida (Mensal, Rescisória...). Portal real (12/11/2026):
+# div.border-solid-sm dentro de app-agrupamento-guia-rapida-consignado. "br-card"/"card" mantidos para
+# layouts antigos. O robô só aceita o quadro com um único título de card e um único botão "Emitir".
+QUADRO_CARD_GUIA = [
+    "div.border-solid-sm",
+    "div.br-card",
+    "div.card",
+]
