@@ -20,8 +20,9 @@ if Path('config/parametros.json').exists():
     datas.append(('config/parametros.json', 'config'))
 if Path('config/.env.example').exists():
     datas.append(('config/.env.example', 'config'))
-if Path('data/relatorio_encargos_exemplo.pdf').exists():
-    datas.append(('data/relatorio_encargos_exemplo.pdf', 'data'))
+# Nada da pasta data/ entra no instalador: ela guarda relatórios, planilhas, logs e perfis de navegador
+# do usuário. Até a v1.0.1 o relatório de exemplo empacotado aqui era um relatório REAL (removido em
+# 12/11/2026; teste em tests/test_empacotamento.py).
 
 hiddenimports = [
     'customtkinter',

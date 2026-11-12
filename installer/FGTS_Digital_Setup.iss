@@ -2,7 +2,7 @@
 ; Sistema: Automação FGTS Digital
 
 #define MyAppName "Automação FGTS Digital"
-#define MyAppVersion "1.0.1"
+#define MyAppVersion "1.0.2"
 #define MyAppPublisher "Alcides Diógenes"
 #define MyAppURL "https://github.com/AlcidesDiogenes/automacao-fgts-digital"
 #define MyAppExeName "FGTS_Digital.exe"
@@ -21,7 +21,7 @@ DefaultDirName={autopf}\FGTS Digital
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
 OutputDir=..\dist_installer
-OutputBaseFilename=FGTS_Digital_Instalador_v1.0.1
+OutputBaseFilename=FGTS_Digital_Instalador_v1.0.2
 SetupIconFile=..\assets\icon.ico
 WizardImageFile=..\assets\wizard_welcome.bmp
 WizardSmallImageFile=..\assets\wizard_header.bmp
@@ -45,6 +45,12 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 Source: "..\dist\FGTS_Digital\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; NOTA: Arquivos de saída e dados gerados durante o uso ficam na pasta de dados do usuário
+
+[InstallDelete]
+; Até a v1.0.1 o instalador levava um relatório REAL do Domínio como exemplo (LGPD). O Inno Setup não apaga
+; arquivos que saíram do pacote, então a atualização remove a cópia antiga (12/11/2026).
+Type: files; Name: "{app}\_internal\data\relatorio_encargos_exemplo.pdf"
+Type: dirifempty; Name: "{app}\_internal\data"
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\assets\icon.ico"

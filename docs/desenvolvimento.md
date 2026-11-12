@@ -71,11 +71,12 @@ Decisão registrada em [ADR-0006](decisoes/ADR-0006-fluxo-de-testes.md).
 | Unitário | `test_parser.py`, `test_validacao_pdf.py`, `test_logger.py`, `test_excel.py` | CNPJ, competência, valores BR, nomenclatura, valor do card Mensal, validação de PDF, log em arquivo, planilhas. |
 | Integração (arquivos) | `test_pdf_parser.py` | Leitor do Domínio com **PDF sintético** no layout real. |
 | Integração (navegador) | `test_bot_seguranca.py`, `test_bot_esperas.py`, `test_browser_modos.py` | Robô contra um **portal FGTS Digital falso** (Playwright com rotas interceptadas, sem rede) e abertura do navegador simulada. |
+| Empacotamento e scripts | `test_empacotamento.py`, `test_scripts_windows.py`, `test_updater.py` | Instalador não leva `data/`, planilhas, PDFs ou `.env`; versão do app = versão do instalador; atualização remove o relatório real das versões antigas; `.bat` em CRLF/ASCII; atualização OTA. |
 | Ponta a ponta (interface) | `test_ui_execucao.py` | Janela real com robô simulado: contadores, mensagem final, Parar, regra de threads, logs simultâneos. |
 | Regressão | todos acima | Cada bug corrigido na auditoria de 27–28/10/2026 tem teste que falhava antes. |
 | Manual (portal real) | `scripts/diagnostico/`, `main.py --cli --conferir` | Login real e conferência em empresas reais — roteiro abaixo. |
 
-**Rodar tudo:** `.\venv\Scripts\python.exe -m pytest -q` (≈ 80 s). Rodar a suíte completa **antes de cada commit**; ao mexer em interface/threads, rodar várias vezes seguidas (travamentos são intermitentes). Se algum teste passar de 5 min, o `faulthandler_timeout` do `pytest.ini` imprime a pilha de todas as threads.
+**Rodar tudo:** `.\venv\Scripts\python.exe -m pytest -q` (≈ 2 min). Rodar a suíte completa **antes de cada commit**; ao mexer em interface/threads, rodar várias vezes seguidas (travamentos são intermitentes). Se algum teste passar de 5 min, o `faulthandler_timeout` do `pytest.ini` imprime a pilha de todas as threads.
 
 ### Mapa de cenários
 
@@ -104,6 +105,17 @@ Decisão registrada em [ADR-0006](decisoes/ADR-0006-fluxo-de-testes.md).
 | `banner.png`, `portal_multicards.png`, `demo.gif` (ilustrativos) | `.\venv\Scripts\python.exe scripts\generate_assets.py` |
 
 Refazer sempre que a tela ou o fluxo mudar.
+
+## Publicar uma versão (atualização OTA)
+
+O app instalado só se atualiza a partir de **Releases** do GitHub (não da `main`): `src/core/updater.py` consulta `releases/latest`, compara com `config/version.py` e baixa o `.exe` anexado à Release. A Release é **pública**.
+
+1. Subir a versão em `config/version.py` e em `installer/FGTS_Digital_Setup.iss` (`MyAppVersion` e `OutputBaseFilename`); atualizar o nome do instalador no README. O teste `tests/test_empacotamento.py` confere que as duas versões batem.
+2. Conferir que o pacote **não leva nada de `data/`** nem planilhas/PDFs/`.env` (`tests/test_empacotamento.py`). Até a v1.0.1 o instalador levava um relatório real do Domínio como "exemplo"; se algum arquivo sair do pacote, incluir a remoção em `[InstallDelete]` do `.iss` (o Inno Setup não apaga sozinho o que saiu do pacote).
+3. Suíte completa verde.
+4. `compilar_instalador.bat` → `dist_installer\FGTS_Digital_Instalador_v<versão>.exe`. Conferir o conteúdo de `dist\FGTS_Digital` (nenhum dado real) antes de publicar.
+5. Commit, merge na `main` e push (com autorização).
+6. Criar a Release `v<versão>` no GitHub com o `.exe` anexado e as mudanças no texto (o app mostra esse texto no aviso de atualização). Só com autorização: a Release é pública.
 
 ## Checklist de mudança
 
